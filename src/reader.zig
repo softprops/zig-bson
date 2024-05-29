@@ -35,8 +35,12 @@ pub fn Reader(comptime T: type) type {
                 const tpe = Type.fromInt(maybe_type);
                 const name = try self.readCStr();
                 const element = switch (tpe) {
-                    .double => RawBson{ .double = types.Double.init(try self.readF64()) },
-                    .string => RawBson{ .string = try self.readStr() },
+                    .double => RawBson{
+                        .double = types.Double.init(try self.readF64()),
+                    },
+                    .string => RawBson{
+                        .string = try self.readStr(),
+                    },
                     .document => blk: {
                         std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
                         var child = self.fork();
