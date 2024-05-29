@@ -54,7 +54,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "oid.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "string.json")) {
             continue;
         }
         const p = try fs.Dir.realpathAlloc(
@@ -96,17 +96,31 @@ test "bson specs" {
                 var reader = Reader(@TypeOf(stream).Reader).init(allocator, stream.reader());
                 defer reader.deinit();
 
-                if (suite.test_key) |test_key| {
-                    const extJson = try jsonStringifyAny(allocator, test_key, try reader.read());
-                    defer allocator.free(extJson);
+                if (suite.test_key) |_| {
+                    const rawBson = try reader.read();
+                    const actual = try std.json.stringifyAlloc(
+                        allocator,
+                        rawBson,
+                        .{},
+                    );
+                    defer allocator.free(actual);
 
                     // make spacing consistency with zigs `minified` string option output
                     // parse and serialize valid.canonical_extjson to ensure consistent comparison
-                    var parsedExpect = try std.json.parseFromSlice(std.json.Value, allocator, valid.canonical_extjson, .{});
+                    var parsedExpect = try std.json.parseFromSlice(
+                        std.json.Value,
+                        allocator,
+                        valid.canonical_extjson,
+                        .{},
+                    );
                     defer parsedExpect.deinit();
-                    const expect = try std.json.stringifyAlloc(allocator, parsedExpect.value, .{});
+                    const expect = try std.json.stringifyAlloc(
+                        allocator,
+                        parsedExpect.value,
+                        .{},
+                    );
                     defer allocator.free(expect);
-                    try std.testing.expectEqualStrings(expect, extJson);
+                    try std.testing.expectEqualStrings(expect, actual);
                 }
             }
         }

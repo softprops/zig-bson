@@ -20,7 +20,6 @@ pub const ObjectId = struct {
         if (bytes.len != 12) {
             return error.InvalidObjectId;
         }
-        // todo: validate len of expected 12
         return .{ .bytes = bytes };
     }
 
@@ -29,23 +28,20 @@ pub const ObjectId = struct {
         return fromBytes(try std.fmt.hexToBytes(&bytes, encoded));
     }
 
-    fn hex(self: @This()) [24]u8 {
-        var encoded: [24]u8 = undefined;
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        var hex: [24]u8 = undefined;
         var i: usize = 0;
         for (self.bytes) |b| {
-            encoded[i] = HEX_CHARS[b >> 4 & 0xF];
+            hex[i] = HEX_CHARS[b >> 4 & 0xF];
             i += 1;
-            encoded[i] = HEX_CHARS[b & 0xF];
+            hex[i] = HEX_CHARS[b & 0xF];
             i += 1;
         }
-        return encoded;
-    }
 
-    pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.print(
             \\{{"$oid":"{s}"}}
         ,
-            .{&self.hex()},
+            .{&hex},
         );
     }
 };
@@ -173,7 +169,23 @@ test "MaxKey.jsonStringify" {
 }
 
 pub const Document = struct {
-    const KV = struct { k: []const u8, v: RawBson };
+    pub const Element = struct { k: []const u8, v: RawBson };
+    elements: []const Element,
+
+    pub fn init(elements: []const Element) @This() {
+        return .{ .elements = elements };
+    }
+
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+
+        for (self.elements) |elem| {
+            try out.objectField(elem.k);
+            try out.write(elem.v);
+        }
+
+        try out.endObject();
+    }
 };
 
 pub const Int64 = struct {
@@ -181,6 +193,16 @@ pub const Int64 = struct {
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.print(
             \\{{"$numberLong":"{d}"}}
+        , .{self.value});
+    }
+};
+
+/// https://github.com/mongodb/specifications/blob/master/source/bson-decimal128/decimal128.md
+pub const Decimal128 = struct {
+    value: []const u8,
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.print(
+            \\{{"$numberDecimal":"{s}"}}
         , .{self.value});
     }
 };
@@ -198,7 +220,7 @@ pub const RawBson = union(enum) {
     double: f64,
     string: []const u8,
     document: Document,
-    array: []const RawBson, // fixme
+    array: []const RawBson,
     boolean: bool,
     null: void,
     regex: Regex,
@@ -206,18 +228,19 @@ pub const RawBson = union(enum) {
     javascript_with_scope: []const u8,
     int32: Int32,
     int64: Int64,
+    decimal128: Decimal128,
     timestamp: Timestamp,
     binary: []const u8,
     object_id: ObjectId,
     datetime: Datetime,
     symbol: []const u8,
-    decimal128: []const u8,
     undefined: void,
     max_key: MaxKey,
     min_key: MinKey,
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         return try switch (self) {
+            .array => |v| out.write(v),
             .min_key => |v| out.write(v),
             .max_key => |v| out.write(v),
             .null => out.write(null),
@@ -229,7 +252,13 @@ pub const RawBson = union(enum) {
             .int32 => |v| out.write(v),
             .boolean => |v| out.write(v),
             .regex => |v| out.write(v),
-            else => unreachable,
+            .decimal128 => |v| out.write(v),
+            .double => |v| out.write(v),
+            .document => |v| out.write(v),
+            else => {
+                std.debug.print("failed to handle {any}\n", .{self});
+                unreachable;
+            },
         };
     }
 };
@@ -271,7 +300,7 @@ pub const Type = enum(i8) {
     ///  Special internal type used by MongoDB replication and sharding. First 4 bytes are an increment, second 4 are a timestamp.
     timestamp = 0x11,
     int64 = 0x12,
-    dec123 = 0x13,
+    decimal128 = 0x13,
     /// Special type which compares lower than all other possible BSON element values.
     min_key = 0xff - 256,
     /// Special type which compares higher than all other possible BSON element values.
