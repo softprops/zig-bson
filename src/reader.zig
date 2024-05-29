@@ -35,34 +35,19 @@ pub fn Reader(comptime T: type) type {
                 const tpe = Type.fromInt(maybe_type);
                 const name = try self.readCStr();
                 const element = switch (tpe) {
-                    .double => blk: {
-                        break :blk RawBson{ .double = types.Double.init(try self.readF64()) };
-                    },
-                    .string => blk: {
-                        const strLen = try self.readI32();
-                        var buf = try std.ArrayList(u8).initCapacity(
-                            self.arena.allocator(),
-                            @intCast(strLen - 1),
-                        );
-                        defer buf.deinit();
-                        try buf.resize(@intCast(strLen - 1));
-                        var bytes = try buf.toOwnedSlice();
-                        _ = try self.reader.reader().readAtLeast(
-                            bytes[0..],
-                            @intCast(strLen - 1),
-                        );
-                        if (try self.reader.reader().readByte() != 0) {
-                            return error.NullTerminatorNotFound;
-                        }
-                        break :blk RawBson{ .string = bytes };
-                    },
+                    .double => RawBson{ .double = types.Double.init(try self.readF64()) },
+                    .string => RawBson{ .string = try self.readStr() },
                     .document => blk: {
                         std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
                         var child = self.fork();
+                        // fixme: leak?
                         const raw = try child.read();
                         // inform the current reader of the byte count that were read...
                         self.reader.bytes_read += child.reader.bytes_read;
-                        break :blk raw;
+                        switch (raw) {
+                            .document => |doc| break :blk RawBson{ .document = try doc.dupe(self.arena.allocator()) },
+                            else => unreachable,
+                        }
                     },
                     .array => blk: {
                         std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
@@ -93,7 +78,7 @@ pub fn Reader(comptime T: type) type {
                             return error.TooFewObjectIdBytes;
                         }
                         break :blk RawBson{
-                            .object_id =  types.ObjectId.fromBytes(bytes),
+                            .object_id = types.ObjectId.fromBytes(bytes),
                         };
                     },
                     .boolean => RawBson{
@@ -112,21 +97,7 @@ pub fn Reader(comptime T: type) type {
                         ),
                     },
                     .dbpointer => blk: {
-                        const strLen = try self.readI32();
-                        var buf = try std.ArrayList(u8).initCapacity(
-                            self.arena.allocator(),
-                            @intCast(strLen - 1),
-                        );
-                        defer buf.deinit();
-                        try buf.resize(@intCast(strLen - 1));
-                        var ref = try buf.toOwnedSlice();
-                        _ = try self.reader.reader().readAtLeast(
-                            ref[0..],
-                            @intCast(strLen - 1),
-                        );
-                        if (try self.reader.reader().readByte() != 0) {
-                            return error.NullTerminatorNotFound;
-                        }
+                        const ref = try self.readStr();
 
                         var id_bytes: [12]u8 = undefined;
                         const count = try self.reader.reader().read(&id_bytes);
@@ -136,44 +107,14 @@ pub fn Reader(comptime T: type) type {
                         }
 
                         break :blk RawBson{
-                            .dbpointer = types.DBPointer.init(ref,  types.ObjectId.fromBytes(id_bytes)),
+                            .dbpointer = types.DBPointer.init(ref, types.ObjectId.fromBytes(id_bytes)),
                         };
                     },
                     .javascript => blk: {
-                        const strLen = try self.readI32();
-                        var buf = try std.ArrayList(u8).initCapacity(
-                            self.arena.allocator(),
-                            @intCast(strLen - 1),
-                        );
-                        defer buf.deinit();
-                        try buf.resize(@intCast(strLen - 1));
-                        var bytes = try buf.toOwnedSlice();
-                        _ = try self.reader.reader().readAtLeast(
-                            bytes[0..],
-                            @intCast(strLen - 1),
-                        );
-                        if (try self.reader.reader().readByte() != 0) {
-                            return error.NullTerminatorNotFound;
-                        }
-                        break :blk RawBson{ .javascript = types.JavaScript.init(bytes) };
+                        break :blk RawBson{ .javascript = types.JavaScript.init(try self.readStr()) };
                     },
                     .symbol => blk: {
-                        const strLen = try self.readI32();
-                        var buf = try std.ArrayList(u8).initCapacity(
-                            self.arena.allocator(),
-                            @intCast(strLen - 1),
-                        );
-                        defer buf.deinit();
-                        try buf.resize(@intCast(strLen - 1));
-                        var bytes = try buf.toOwnedSlice();
-                        _ = try self.reader.reader().readAtLeast(
-                            bytes[0..],
-                            @intCast(strLen - 1),
-                        );
-                        if (try self.reader.reader().readByte() != 0) {
-                            return error.NullTerminatorNotFound;
-                        }
-                        break :blk RawBson{ .symbol = types.Symbol.init(bytes) };
+                        break :blk RawBson{ .symbol = types.Symbol.init(try self.readStr()) };
                     },
                     // code with scope
                     .int32 => RawBson{
@@ -233,6 +174,25 @@ pub fn Reader(comptime T: type) type {
 
         inline fn readCStr(self: *@This()) ![]u8 {
             return (try self.reader.reader().readUntilDelimiterOrEofAlloc(self.arena.allocator(), 0, std.math.maxInt(usize))) orelse "";
+        }
+
+        inline fn readStr(self: *@This()) ![]u8 {
+            const strLen = try self.readI32();
+            var buf = try std.ArrayList(u8).initCapacity(
+                self.arena.allocator(),
+                @intCast(strLen - 1),
+            );
+            defer buf.deinit();
+            try buf.resize(@intCast(strLen - 1));
+            var bytes = try buf.toOwnedSlice();
+            _ = try self.reader.reader().readAtLeast(
+                bytes[0..],
+                @intCast(strLen - 1),
+            );
+            if (try self.reader.reader().readByte() != 0) {
+                return error.NullTerminatorNotFound;
+            }
+            return bytes;
         }
 
         inline fn readI64(self: *@This()) !i64 {

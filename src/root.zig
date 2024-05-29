@@ -54,7 +54,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "dbpointer.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "string.json")) {
             continue;
         }
         const p = try fs.Dir.realpathAlloc(
@@ -80,7 +80,7 @@ test "bson specs" {
         defer parsed.deinit();
         const suite = parsed.value;
         if (suite.valid) |examples| {
-            for (examples[1..2]) |valid| {
+            for (examples[0..]) |valid| {
                 if (std.mem.count(u8, valid.description, "Regular expression as value of $regex") > 0) {
                     // these tests do not conform to the test_key matches canonical_extjson convention
                     continue;

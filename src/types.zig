@@ -174,6 +174,12 @@ pub const Document = struct {
         return .{ .elements = elements };
     }
 
+    pub fn dupe(self: @This(), allocator: std.mem.Allocator) !@This() {
+        const duped = try allocator.dupe(Element, self.elements);
+        defer allocator.free(self.elements);
+        return init(duped);
+    }
+
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.beginObject();
 
