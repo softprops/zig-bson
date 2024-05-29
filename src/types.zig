@@ -280,6 +280,41 @@ pub const Symbol = struct {
     }
 };
 
+pub const Binary = struct {
+    value: []const u8,
+    subtype: SubType,
+    pub fn init(value: []const u8, subtype: SubType) @This() {
+        return .{ .value = value, .subtype = subtype };
+    }
+
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+        try out.objectField("$binary");
+
+        try out.beginObject();
+        try out.objectField("base64");
+
+        // note: because we only know the len of value at runtime, we can't statically allocate
+        // an array and because we're in a place we don't have an allocator, we create one on demand
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+        const allocator = gpa.allocator();
+        const encoder = std.base64.standard.Encoder;
+        var buf = try std.ArrayList(u8).initCapacity(allocator, encoder.calcSize(self.value.len));
+        defer buf.deinit();
+        try buf.resize(buf.capacity);
+        const slice = try buf.toOwnedSlice();
+        defer allocator.free(slice);
+
+        try out.write(encoder.encode(slice, self.value));
+        try out.objectField("subType");
+        try out.write(self.subtype.hex());
+        try out.endObject();
+
+        try out.endObject();
+    }
+};
+
 pub const RawBson = union(enum) {
     double: Double,
     string: []const u8,
@@ -295,7 +330,7 @@ pub const RawBson = union(enum) {
     int64: Int64,
     decimal128: Decimal128,
     timestamp: Timestamp,
-    binary: []const u8,
+    binary: Binary,
     object_id: ObjectId,
     datetime: Datetime,
     symbol: Symbol,
@@ -309,7 +344,7 @@ pub const RawBson = union(enum) {
             .string => |v| out.write(v),
             .document => |v| out.write(v),
             .array => |v| out.write(v),
-            // .binary
+            .binary => |v| out.write(v),
             .undefined => out.print("{{\"$undefined\":true}}", .{}),
             .object_id => |v| out.write(v),
             .boolean => |v| out.write(v),
@@ -330,6 +365,18 @@ pub const RawBson = union(enum) {
                 unreachable;
             },
         };
+    }
+
+    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        switch (self) {
+            .document => |v| {
+                // for (v.elements) |elem| {
+                //     elem.v.deinit(allocator);
+                // }
+                allocator.free(v.elements);
+            },
+            else => {},
+        }
     }
 };
 
@@ -401,11 +448,16 @@ pub const SubType = enum(u8) {
     encrypted = 0x06,
     /// Compact storage of BSON data. This data type uses delta and delta-of-delta compression and run-length-encoding for efficient element storage. Also has an encoding for sparse arrays containing missing values.
     compact_column = 0x07,
+    sensitve = 0x08,
     // 128 - 255
     user_defined = 0x80,
 
-    fn fromInt(int: u8) @This() {
+    pub fn fromInt(int: u8) @This() {
         return @enumFromInt(int);
+    }
+
+    fn hex(self: @This()) [2]u8 {
+        return std.fmt.bytesToHex([_]u8{@intFromEnum(self)}, .lower);
     }
 
     pub fn format(

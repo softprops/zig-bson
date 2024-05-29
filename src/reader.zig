@@ -10,13 +10,19 @@ pub fn Reader(comptime T: type) type {
         arena: std.heap.ArenaAllocator,
 
         pub fn init(allocator: std.mem.Allocator, rdr: T) @This() {
-            return .{ .reader = std.io.countingReader(rdr), .arena = std.heap.ArenaAllocator.init(allocator) };
+            return .{
+                .reader = std.io.countingReader(rdr),
+                .arena = std.heap.ArenaAllocator.init(allocator),
+            };
         }
 
-        // create a new Reader starting where this reader left off, sharing allocation states so that it only needs
-        // freed once
+        /// create a new Reader starting where this reader left off, sharing allocation states so that it only needs
+        /// freed once
         fn fork(self: *@This()) @This() {
-            return .{ .reader = std.io.countingReader(self.reader.child_reader), .arena = self.arena };
+            return .{
+                .reader = std.io.countingReader(self.reader.child_reader),
+                .arena = self.arena,
+            };
         }
 
         pub fn deinit(self: *@This()) void {
@@ -27,12 +33,11 @@ pub fn Reader(comptime T: type) type {
             const len = try self.readI32();
             var elements = std.ArrayList(types.Document.Element).init(self.arena.allocator());
             defer elements.deinit();
-            std.debug.print("reading doc of len {d} curr count {d}\n", .{ len, self.reader.bytes_read });
+            std.log.debug("reading doc of len {d} curr count {d}", .{ len, self.reader.bytes_read });
 
             while (self.reader.bytes_read < len - 1) {
-                std.debug.print("bytes read {d}, total bytes {d}\n", .{ self.reader.bytes_read, len });
-                const maybe_type = try self.readI8();
-                const tpe = Type.fromInt(maybe_type);
+                std.log.debug("bytes read {d}, total bytes {d}", .{ self.reader.bytes_read, len });
+                const tpe = Type.fromInt(try self.readI8());
                 const name = try self.readCStr();
                 const element = switch (tpe) {
                     .double => RawBson{
@@ -42,22 +47,24 @@ pub fn Reader(comptime T: type) type {
                         .string = try self.readStr(),
                     },
                     .document => blk: {
-                        std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
+                        std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
                         var child = self.fork();
                         // fixme: leak?
                         const raw = try child.read();
-                        // inform the current reader of the byte count that were read...
+                        // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
-                        switch (raw) {
-                            .document => |doc| break :blk RawBson{ .document = try doc.dupe(self.arena.allocator()) },
-                            else => unreachable,
-                        }
+                        //defer raw.deinit(self.arena.allocator());
+                        break :blk raw;
+                        // switch (raw) {
+                        //     .document => |doc| break :blk RawBson{ .document = try doc.dupe(self.arena.allocator()) },
+                        //     else => unreachable,
+                        // }
                     },
                     .array => blk: {
-                        std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
+                        std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
                         var child = self.fork();
                         const raw = try child.read();
-                        // inform the current reader of the byte count that were read...
+                        // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
                         switch (raw) {
                             .document => |doc| {
@@ -67,18 +74,28 @@ pub fn Reader(comptime T: type) type {
                                 for (doc.elements) |elem| {
                                     elems.appendAssumeCapacity(elem.v);
                                 }
+                                // caller owns freeing this
                                 break :blk RawBson{ .array = try elems.toOwnedSlice() };
                             },
                             else => unreachable,
                         }
                     },
-                    // .binary => ...
+                    .binary => blk: {
+                        const binLen = try self.readI32();
+                        const st = types.SubType.fromInt(try self.readU8());
+                        var buf = try std.ArrayList(u8).initCapacity(self.arena.allocator(), @intCast(binLen));
+                        defer buf.deinit();
+                        try buf.resize(@intCast(binLen));
+                        const bytes = try buf.toOwnedSlice();
+                        _ = try self.reader.reader().read(bytes);
+                        break :blk RawBson{ .binary = types.Binary.init(bytes, st) };
+                    },
                     .undefined => RawBson{ .undefined = {} },
                     .object_id => blk: {
                         var bytes: [12]u8 = undefined;
                         const count = try self.reader.reader().read(&bytes);
                         if (count != 12) {
-                            std.debug.print("only read {d} objectId bytes", .{count});
+                            std.log.debug("only read {d} objectId bytes", .{count});
                             return error.TooFewObjectIdBytes;
                         }
                         break :blk RawBson{
@@ -106,7 +123,7 @@ pub fn Reader(comptime T: type) type {
                         var id_bytes: [12]u8 = undefined;
                         const count = try self.reader.reader().read(&id_bytes);
                         if (count != 12) {
-                            std.debug.print("only read {d} objectId bytes", .{count});
+                            std.log.debug("only read {d} objectId bytes", .{count});
                             return error.TooFewObjectIdBytes;
                         }
 
@@ -152,19 +169,20 @@ pub fn Reader(comptime T: type) type {
                     .min_key => RawBson{ .min_key = types.MinKey{} },
                     .max_key => RawBson{ .max_key = types.MaxKey{} },
                     else => {
-                        std.debug.print("unsupported type {any}\n", .{tpe});
+                        std.log.err("unsupported type {any}", .{tpe});
                         @panic("unsupported type");
                     },
                 };
                 try elements.append(.{ .k = name, .v = element });
             }
 
-            std.debug.print("finished with fields...\n", .{});
+            std.log.debug("finished with fields...", .{});
             if (try self.reader.reader().readByte() != 0) {
-                std.debug.print("warning: invalid end of stream", .{});
+                std.log.debug("warning: invalid end of stream", .{});
             }
-            std.debug.print("len {d} read {d}\n", .{ len, self.reader.bytes_read });
+            std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
 
+            // caller owns freeing elements
             return RawBson{ .document = types.Document.init(try elements.toOwnedSlice()) };
         }
 
@@ -176,10 +194,15 @@ pub fn Reader(comptime T: type) type {
             return self.reader.reader().readInt(i8, .little);
         }
 
+        inline fn readU8(self: *@This()) !u8 {
+            return self.reader.reader().readInt(u8, .little);
+        }
+
         inline fn readCStr(self: *@This()) ![]u8 {
             return (try self.reader.reader().readUntilDelimiterOrEofAlloc(self.arena.allocator(), 0, std.math.maxInt(usize))) orelse "";
         }
 
+        /// caller must free returned bytes
         inline fn readStr(self: *@This()) ![]u8 {
             const strLen = try self.readI32();
             var buf = try std.ArrayList(u8).initCapacity(

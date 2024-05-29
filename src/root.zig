@@ -78,13 +78,13 @@ test "bson specs" {
             },
         );
         defer parsed.deinit();
+
         const suite = parsed.value;
+        // todo: test suite.decodeError cases
+
+        // test the valid cases
         if (suite.valid) |examples| {
             for (examples[0..]) |valid| {
-                if (std.mem.count(u8, valid.description, "Regular expression as value of $regex") > 0) {
-                    // these tests do not conform to the test_key matches canonical_extjson convention
-                    continue;
-                }
                 std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
                 const bson = try hex.decode(allocator, valid.canonical_bson);
@@ -98,6 +98,8 @@ test "bson specs" {
 
                 if (suite.test_key) |_| {
                     const rawBson = try reader.read();
+                    // free here?
+                    // defer rawBson.deinit(allocator);
 
                     const actual = try std.json.stringifyAlloc(
                         allocator,
@@ -121,21 +123,12 @@ test "bson specs" {
                         .{},
                     );
                     defer allocator.free(expect);
-                    try std.testing.expectEqualStrings(expect, actual);
+                    std.testing.expectEqualStrings(expect, actual) catch |err| {
+                        std.debug.print("\nfailed on test {s}: {s}\n", .{ suite.description, valid.description });
+                        return err;
+                    };
                 }
             }
         }
     }
-}
-
-fn jsonStringifyAny(allocator: std.mem.Allocator, key: []const u8, value: anytype) ![]u8 {
-    var jsonStream = std.ArrayList(u8).init(allocator);
-    defer jsonStream.deinit();
-    var jsonWriter = std.json.writeStream(jsonStream.writer(), .{});
-    defer jsonWriter.deinit();
-    try jsonWriter.beginObject();
-    try jsonWriter.objectField(key);
-    try jsonWriter.write(value);
-    try jsonWriter.endObject();
-    return try jsonStream.toOwnedSlice();
 }
