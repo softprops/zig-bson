@@ -16,7 +16,7 @@ const HEX_CHARS = [16]u8{
 pub const ObjectId = struct {
     bytes: [12]u8,
 
-    pub fn fromBytes(bytes: [12]u8) !@This() {
+    pub fn fromBytes(bytes: [12]u8) @This() {
         return .{ .bytes = bytes };
     }
 
@@ -238,6 +238,28 @@ pub const JavaScript = struct {
     }
 };
 
+pub const DBPointer = struct {
+    ref: []const u8,
+    id: ObjectId,
+    pub fn init(ref: []const u8, id: ObjectId) @This() {
+        return .{ .ref = ref, .id = id };
+    }
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+
+        try out.objectField("$dbPointer");
+
+        try out.beginObject();
+        try out.objectField("$ref");
+        try out.write(self.ref);
+        try out.objectField("$id");
+        try out.write(self.id);
+        try out.endObject();
+
+        try out.endObject();
+    }
+};
+
 pub const Symbol = struct {
     value: []const u8,
     pub fn init(value: []const u8) @This() {
@@ -259,6 +281,7 @@ pub const RawBson = union(enum) {
     boolean: bool,
     null: void,
     regex: Regex,
+    dbpointer: DBPointer,
     javascript: JavaScript,
     javascript_with_scope: []const u8,
     int32: Int32,
@@ -287,7 +310,7 @@ pub const RawBson = union(enum) {
             .null => out.write(null),
             .regex => |v| out.write(v),
             .javascript => |v| out.write(v),
-            // .dbpointer
+            .dbpointer => |v| out.write(v),
             .symbol => |v| out.write(v),
             .int32 => |v| out.write(v),
             .timestamp => |v| out.write(v),
@@ -330,7 +353,7 @@ pub const Type = enum(i8) {
     null = 0x0a,
     regex = 0x0b,
     /// deprecated
-    db_ptr = 0x0c,
+    dbpointer = 0x0c,
     javascript = 0x0d,
     /// deprecated
     symbol = 0x0e,

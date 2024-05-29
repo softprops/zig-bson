@@ -54,7 +54,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "symbol.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "dbpointer.json")) {
             continue;
         }
         const p = try fs.Dir.realpathAlloc(

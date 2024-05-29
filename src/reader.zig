@@ -93,7 +93,7 @@ pub fn Reader(comptime T: type) type {
                             return error.TooFewObjectIdBytes;
                         }
                         break :blk RawBson{
-                            .object_id = try types.ObjectId.fromBytes(bytes),
+                            .object_id =  types.ObjectId.fromBytes(bytes),
                         };
                     },
                     .boolean => RawBson{
@@ -111,7 +111,34 @@ pub fn Reader(comptime T: type) type {
                             try self.readCStr(),
                         ),
                     },
-                    // .dbpointer =>
+                    .dbpointer => blk: {
+                        const strLen = try self.readI32();
+                        var buf = try std.ArrayList(u8).initCapacity(
+                            self.arena.allocator(),
+                            @intCast(strLen - 1),
+                        );
+                        defer buf.deinit();
+                        try buf.resize(@intCast(strLen - 1));
+                        var ref = try buf.toOwnedSlice();
+                        _ = try self.reader.reader().readAtLeast(
+                            ref[0..],
+                            @intCast(strLen - 1),
+                        );
+                        if (try self.reader.reader().readByte() != 0) {
+                            return error.NullTerminatorNotFound;
+                        }
+
+                        var id_bytes: [12]u8 = undefined;
+                        const count = try self.reader.reader().read(&id_bytes);
+                        if (count != 12) {
+                            std.debug.print("only read {d} objectId bytes", .{count});
+                            return error.TooFewObjectIdBytes;
+                        }
+
+                        break :blk RawBson{
+                            .dbpointer = types.DBPointer.init(ref,  types.ObjectId.fromBytes(id_bytes)),
+                        };
+                    },
                     .javascript => blk: {
                         const strLen = try self.readI32();
                         var buf = try std.ArrayList(u8).initCapacity(
@@ -130,7 +157,7 @@ pub fn Reader(comptime T: type) type {
                         }
                         break :blk RawBson{ .javascript = types.JavaScript.init(bytes) };
                     },
-                     .symbol => blk: {
+                    .symbol => blk: {
                         const strLen = try self.readI32();
                         var buf = try std.ArrayList(u8).initCapacity(
                             self.arena.allocator(),
