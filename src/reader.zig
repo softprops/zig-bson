@@ -35,27 +35,8 @@ pub fn Reader(comptime T: type) type {
                 const tpe = Type.fromInt(maybe_type);
                 const name = try self.readCStr();
                 const element = switch (tpe) {
-                    .document => blk: {
-                        std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
-                        var child = self.fork();
-                        const doc = try child.read();
-                        // inform the current reader...
-                        self.reader.bytes_read += child.reader.bytes_read;
-                        break :blk doc;
-                    },
-                    .min_key => RawBson{ .min_key = types.MinKey{} },
-                    .max_key => RawBson{ .max_key = types.MaxKey{} },
-                    .null => RawBson{ .null = {} },
-                    .datetime => RawBson{
-                        .datetime = types.Datetime.fromMillis(
-                            try self.readI64(),
-                        ),
-                    },
-                    .timestamp => RawBson{
-                        .timestamp = types.Timestamp.init(
-                            try self.readU32(),
-                            try self.readU32(),
-                        ),
+                    .double => blk: {
+                        break :blk RawBson{ .double = types.Double.init(try self.readF64()) };
                     },
                     .string => blk: {
                         const strLen = try self.readI32();
@@ -75,6 +56,35 @@ pub fn Reader(comptime T: type) type {
                         }
                         break :blk RawBson{ .string = bytes };
                     },
+                    .document => blk: {
+                        std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
+                        var child = self.fork();
+                        const raw = try child.read();
+                        // inform the current reader of the byte count that were read...
+                        self.reader.bytes_read += child.reader.bytes_read;
+                        break :blk raw;
+                    },
+                    .array => blk: {
+                        std.debug.print("forking reader after byte # {d}\n", .{self.reader.bytes_read});
+                        var child = self.fork();
+                        const raw = try child.read();
+                        // inform the current reader of the byte count that were read...
+                        self.reader.bytes_read += child.reader.bytes_read;
+                        switch (raw) {
+                            .document => |doc| {
+                                // an array is just a document whose keys are array indexes. i.e { "0": "...", "1": "..." }
+                                var elems = try std.ArrayList(RawBson).initCapacity(self.arena.allocator(), doc.elements.len);
+                                defer elems.deinit();
+                                for (doc.elements) |elem| {
+                                    elems.appendAssumeCapacity(elem.v);
+                                }
+                                break :blk RawBson{ .array = try elems.toOwnedSlice() };
+                            },
+                            else => unreachable,
+                        }
+                    },
+                    // .binary => ...
+                    .undefined => RawBson{ .undefined = {} },
                     .object_id => blk: {
                         var bytes: [12]u8 = undefined;
                         const count = try self.reader.reader().read(&bytes);
@@ -83,17 +93,76 @@ pub fn Reader(comptime T: type) type {
                             return error.TooFewObjectIdBytes;
                         }
                         break :blk RawBson{
-                            .object_id = try types.ObjectId.fromBytes(&bytes),
+                            .object_id = try types.ObjectId.fromBytes(bytes),
                         };
+                    },
+                    .boolean => RawBson{
+                        .boolean = (try self.readI8()) == 1,
+                    },
+                    .datetime => RawBson{
+                        .datetime = types.Datetime.fromMillis(
+                            try self.readI64(),
+                        ),
+                    },
+                    .null => RawBson{ .null = {} },
+                    .regex => RawBson{
+                        .regex = types.Regex.init(
+                            try self.readCStr(),
+                            try self.readCStr(),
+                        ),
+                    },
+                    // .dbpointer =>
+                    .javascript => blk: {
+                        const strLen = try self.readI32();
+                        var buf = try std.ArrayList(u8).initCapacity(
+                            self.arena.allocator(),
+                            @intCast(strLen - 1),
+                        );
+                        defer buf.deinit();
+                        try buf.resize(@intCast(strLen - 1));
+                        var bytes = try buf.toOwnedSlice();
+                        _ = try self.reader.reader().readAtLeast(
+                            bytes[0..],
+                            @intCast(strLen - 1),
+                        );
+                        if (try self.reader.reader().readByte() != 0) {
+                            return error.NullTerminatorNotFound;
+                        }
+                        break :blk RawBson{ .javascript = types.JavaScript.init(bytes) };
+                    },
+                     .symbol => blk: {
+                        const strLen = try self.readI32();
+                        var buf = try std.ArrayList(u8).initCapacity(
+                            self.arena.allocator(),
+                            @intCast(strLen - 1),
+                        );
+                        defer buf.deinit();
+                        try buf.resize(@intCast(strLen - 1));
+                        var bytes = try buf.toOwnedSlice();
+                        _ = try self.reader.reader().readAtLeast(
+                            bytes[0..],
+                            @intCast(strLen - 1),
+                        );
+                        if (try self.reader.reader().readByte() != 0) {
+                            return error.NullTerminatorNotFound;
+                        }
+                        break :blk RawBson{ .symbol = types.Symbol.init(bytes) };
+                    },
+                    // code with scope
+                    .int32 => RawBson{
+                        .int32 = types.Int32{
+                            .value = try self.readI32(),
+                        },
+                    },
+                    .timestamp => RawBson{
+                        .timestamp = types.Timestamp.init(
+                            try self.readU32(),
+                            try self.readU32(),
+                        ),
                     },
                     .int64 => RawBson{
                         .int64 = types.Int64{
                             .value = try self.readI64(),
-                        },
-                    },
-                    .int32 => RawBson{
-                        .int32 = types.Int32{
-                            .value = try self.readI32(),
                         },
                     },
                     .decimal128 => blk: {
@@ -108,15 +177,8 @@ pub fn Reader(comptime T: type) type {
                             },
                         };
                     },
-                    .boolean => RawBson{
-                        .boolean = (try self.readI8()) == 1,
-                    },
-                    .regex => RawBson{
-                        .regex = types.Regex.init(
-                            try self.readCStr(),
-                            try self.readCStr(),
-                        ),
-                    },
+                    .min_key => RawBson{ .min_key = types.MinKey{} },
+                    .max_key => RawBson{ .max_key = types.MaxKey{} },
                     else => {
                         std.debug.print("unsupported type {any}\n", .{tpe});
                         @panic("unsupported type");
@@ -148,6 +210,11 @@ pub fn Reader(comptime T: type) type {
 
         inline fn readI64(self: *@This()) !i64 {
             return self.reader.reader().readInt(i64, .little);
+        }
+
+        inline fn readF64(self: *@This()) !f64 {
+            // fixme. not working yet
+            return @floatFromInt(try self.reader.reader().readInt(u64, .little));
         }
 
         inline fn readU32(self: *@This()) !u32 {

@@ -14,17 +14,14 @@ const HEX_CHARS = [16]u8{
 /// * A 3-byte incrementing counter, initialized to a random value.
 /// https://www.mongodb.com/docs/manual/reference/bson-types/#objectid
 pub const ObjectId = struct {
-    bytes: []const u8,
+    bytes: [12]u8,
 
-    pub fn fromBytes(bytes: []const u8) !@This() {
-        if (bytes.len != 12) {
-            return error.InvalidObjectId;
-        }
+    pub fn fromBytes(bytes: [12]u8) !@This() {
         return .{ .bytes = bytes };
     }
 
     pub fn fromHex(encoded: []const u8) !@This() {
-        var bytes: [24]u8 = undefined;
+        var bytes: [12]u8 = undefined;
         return fromBytes(try std.fmt.hexToBytes(&bytes, encoded));
     }
 
@@ -216,15 +213,53 @@ pub const Int32 = struct {
     }
 };
 
+pub const Double = struct {
+    value: f64,
+    pub fn init(value: f64) @This() {
+        return .{ .value = value };
+    }
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.print(
+            \\{{"$numberDouble":"{d}"}}
+        , .{self.value});
+    }
+};
+
+pub const JavaScript = struct {
+    value: []const u8,
+    pub fn init(value: []const u8) @This() {
+        return .{ .value = value };
+    }
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+        try out.objectField("$code");
+        try out.write(self.value);
+        try out.endObject();
+    }
+};
+
+pub const Symbol = struct {
+    value: []const u8,
+    pub fn init(value: []const u8) @This() {
+        return .{ .value = value };
+    }
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+        try out.objectField("$symbol");
+        try out.write(self.value);
+        try out.endObject();
+    }
+};
+
 pub const RawBson = union(enum) {
-    double: f64,
+    double: Double,
     string: []const u8,
     document: Document,
     array: []const RawBson,
     boolean: bool,
     null: void,
     regex: Regex,
-    javascript: []const u8,
+    javascript: JavaScript,
     javascript_with_scope: []const u8,
     int32: Int32,
     int64: Int64,
@@ -233,28 +268,33 @@ pub const RawBson = union(enum) {
     binary: []const u8,
     object_id: ObjectId,
     datetime: Datetime,
-    symbol: []const u8,
+    symbol: Symbol,
     undefined: void,
     max_key: MaxKey,
     min_key: MinKey,
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         return try switch (self) {
+            .double => |v| out.write(v),
+            .string => |v| out.write(v),
+            .document => |v| out.write(v),
             .array => |v| out.write(v),
+            // .binary
+            .undefined => out.print("{{\"$undefined\":true}}", .{}),
+            .object_id => |v| out.write(v),
+            .boolean => |v| out.write(v),
+            .datetime => |v| out.write(v),
+            .null => out.write(null),
+            .regex => |v| out.write(v),
+            .javascript => |v| out.write(v),
+            // .dbpointer
+            .symbol => |v| out.write(v),
+            .int32 => |v| out.write(v),
+            .timestamp => |v| out.write(v),
+            .int64 => |v| out.write(v),
+            .decimal128 => |v| out.write(v),
             .min_key => |v| out.write(v),
             .max_key => |v| out.write(v),
-            .null => out.write(null),
-            .datetime => |v| out.write(v),
-            .timestamp => |v| out.write(v),
-            .string => |v| out.write(v),
-            .object_id => |v| out.write(v),
-            .int64 => |v| out.write(v),
-            .int32 => |v| out.write(v),
-            .boolean => |v| out.write(v),
-            .regex => |v| out.write(v),
-            .decimal128 => |v| out.write(v),
-            .double => |v| out.write(v),
-            .document => |v| out.write(v),
             else => {
                 std.debug.print("failed to handle {any}\n", .{self});
                 unreachable;
