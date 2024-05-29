@@ -22,7 +22,8 @@ pub const ObjectId = struct {
 
     pub fn fromHex(encoded: []const u8) !@This() {
         var bytes: [12]u8 = undefined;
-        return fromBytes(try std.fmt.hexToBytes(&bytes, encoded));
+        _ = try std.fmt.hexToBytes(&bytes, encoded);
+        return fromBytes(bytes);
     }
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
@@ -43,18 +44,18 @@ pub const ObjectId = struct {
     }
 };
 
-// test ObjectId {
-//     const allocator = std.testing.allocator;
-//     const json = try std.json.stringifyAlloc(
-//         allocator,
-//         try ObjectId.fromHex("507f1f77bcf86cd799439011"),
-//         .{},
-//     );
-//     defer allocator.free(json);
-//     try std.testing.expectEqualStrings(
-//         \\\{"$oid":"507f1f77bcf86cd799439011"}
-//     , json);
-// }
+test ObjectId {
+    const allocator = std.testing.allocator;
+    const json = try std.json.stringifyAlloc(
+        allocator,
+        try ObjectId.fromHex("507f1f77bcf86cd799439011"),
+        .{},
+    );
+    defer allocator.free(json);
+    try std.testing.expectEqualStrings(
+        \\{"$oid":"507f1f77bcf86cd799439011"}
+    , json);
+}
 
 pub const Datetime = struct {
     millis: i64,
