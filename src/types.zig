@@ -226,9 +226,15 @@ pub const Double = struct {
         return .{ .value = value };
     }
     pub fn jsonStringify(self: @This(), out: anytype) !void {
-        try out.print(
-            \\{{"$numberDouble":"{d}"}}
-        , .{self.value});
+        if (@round(self.value) == self.value) {
+            try out.print(
+                \\{{"$numberDouble":"{d:.1}"}}
+            , .{self.value});
+        } else {
+            try out.print(
+                \\{{"$numberDouble":"{d}"}}
+            , .{self.value});
+        }
     }
 };
 

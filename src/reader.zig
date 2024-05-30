@@ -82,13 +82,13 @@ pub fn Reader(comptime T: type) type {
                         defer buf.deinit();
                         try buf.resize(@intCast(binLen));
                         const bytes = try buf.toOwnedSlice();
-                        _ = try self.reader.reader().read(bytes);
+                        _ = try self.reader.reader().readAll(bytes);
                         break :blk RawBson{ .binary = types.Binary.init(bytes, st) };
                     },
                     .undefined => RawBson{ .undefined = {} },
                     .object_id => blk: {
                         var bytes: [12]u8 = undefined;
-                        const count = try self.reader.reader().read(&bytes);
+                        const count = try self.reader.reader().readAll(&bytes);
                         if (count != 12) {
                             std.log.debug("only read {d} objectId bytes", .{count});
                             return error.TooFewObjectIdBytes;
@@ -116,7 +116,7 @@ pub fn Reader(comptime T: type) type {
                         const ref = try self.readStr();
 
                         var id_bytes: [12]u8 = undefined;
-                        const count = try self.reader.reader().read(&id_bytes);
+                        const count = try self.reader.reader().readAll(&id_bytes);
                         if (count != 12) {
                             std.log.debug("only read {d} objectId bytes", .{count});
                             return error.TooFewObjectIdBytes;
@@ -151,7 +151,7 @@ pub fn Reader(comptime T: type) type {
                     },
                     .decimal128 => blk: {
                         var bytes: [16]u8 = undefined;
-                        const count = try self.reader.reader().read(&bytes);
+                        const count = try self.reader.reader().readAll(&bytes);
                         if (count != 16) {
                             return error.TooFewDecimal128Bytes;
                         }
@@ -222,8 +222,9 @@ pub fn Reader(comptime T: type) type {
         }
 
         inline fn readF64(self: *@This()) !f64 {
-            // fixme. not working yet
-            return @floatFromInt(try self.reader.reader().readInt(u64, .little));
+            var bytes: [8]u8 = undefined;
+            _ = try self.reader.reader().readAll(&bytes);
+            return @bitCast(bytes);
         }
 
         inline fn readU32(self: *@This()) !u32 {
