@@ -207,9 +207,8 @@ pub fn Reader(comptime T: type) type {
             defer buf.deinit();
             try buf.resize(@intCast(strLen - 1));
             var bytes = try buf.toOwnedSlice();
-            _ = try self.reader.reader().readAtLeast(
+            _ = try self.reader.reader().readAll(
                 bytes[0..],
-                @intCast(strLen - 1),
             );
             if (try self.reader.reader().readByte() != 0) {
                 return error.NullTerminatorNotFound;

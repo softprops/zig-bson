@@ -55,7 +55,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "double.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "document.json")) {
             continue;
         }
         const p = try fs.Dir.realpathAlloc(
@@ -85,7 +85,7 @@ test "bson specs" {
 
         // test the valid cases
         if (suite.valid) |examples| {
-            for (examples[1..2]) |valid| {
+            for (examples[0..]) |valid| {
                 std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
                 const bson = try hex.decode(allocator, valid.canonical_bson);
