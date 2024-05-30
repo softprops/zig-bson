@@ -1,4 +1,4 @@
-/// A [bson](https://bsonspec.org/spec.html) encoding and decoding library
+/// A [BSON](https://bsonspec.org/spec.html) encoding and decoding library
 ///
 /// see also https://www.mongodb.com/resources/basics/json-and-bson
 const std = @import("std");
@@ -8,7 +8,6 @@ pub const Reader = @import("reader.zig").Reader;
 test "bson specs" {
     const testing = std.testing;
     const fs = std.fs;
-    const hex = @import("hex.zig");
 
     const TestSuite = struct {
         /// for test description
@@ -58,13 +57,11 @@ test "bson specs" {
         if (!std.mem.endsWith(u8, entry.path, "document.json")) {
             continue;
         }
-        const p = try fs.Dir.realpathAlloc(
-            specs,
-            allocator,
-            entry.path,
+        var pathBuf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var file = try fs.openFileAbsolute(
+            try fs.Dir.realpath(specs, entry.path, &pathBuf),
+            .{},
         );
-        defer allocator.free(p);
-        var file = try fs.openFileAbsolute(p, .{});
         const buffer = try file.readToEndAlloc(
             allocator,
             std.math.maxInt(usize),
@@ -88,8 +85,8 @@ test "bson specs" {
             for (examples[0..]) |valid| {
                 std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
-                const bson = try hex.decode(allocator, valid.canonical_bson);
-                defer allocator.free(bson);
+                var bsonBuf: [std.mem.page_size]u8 = undefined;
+                const bson = try std.fmt.hexToBytes(&bsonBuf, valid.canonical_bson);
 
                 std.debug.print("raw (bytes) {any}\n", .{bson});
 

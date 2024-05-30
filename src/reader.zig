@@ -2,6 +2,9 @@ const std = @import("std");
 const types = @import("types.zig");
 const RawBson = types.RawBson;
 
+/// A Reader deserializes BSON bytes from a provided io.Reader
+/// into a RawBson type, typically a RawBson.document with embedded BSON types
+///
 /// see https://bsonspec.org/spec.html
 pub fn Reader(comptime T: type) type {
     return struct {
@@ -25,6 +28,7 @@ pub fn Reader(comptime T: type) type {
         }
 
         pub fn deinit(self: *@This()) void {
+            std.debug.print("releasing arena memory...\n", .{});
             self.arena.deinit();
         }
 
@@ -52,8 +56,12 @@ pub fn Reader(comptime T: type) type {
                         const raw = try child.read();
                         // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
-                        //defer raw.deinit(self.arena.allocator());
                         break :blk raw;
+                        // defer raw.deinit(self.arena.allocator());
+                        // switch (raw) {
+                        //     .document => |v| break :blk RawBson{ .document = try v.dupe(self.arena.allocator()) },
+                        //     else => unreachable,
+                        // }
                     },
                     .array => blk: {
                         std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
@@ -174,6 +182,7 @@ pub fn Reader(comptime T: type) type {
             std.log.debug("finished with fields...", .{});
             if (try self.reader.reader().readByte() != 0) {
                 std.log.debug("warning: invalid end of stream", .{});
+                return error.InvalidEndOfStream;
             }
             std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
 

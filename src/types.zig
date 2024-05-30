@@ -1,11 +1,8 @@
-// https://github.com/mongodb/specifications/blob/master/source/extended-json.rst#extended-json-format
-
+//!
+//! All bson types declare implementions of [Canonical Extended JSON formats](https://github.com/mongodb/specifications/blob/master/source/extended-json.md). When
+//! using std.json, these implementation will go into effect
+//!
 const std = @import("std");
-
-const HEX_CHARS = [16]u8{
-    '0', '1', '2', '3', '4', '5', '6', '7',
-    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-};
 
 /// consists of 12 bytes
 ///
@@ -27,19 +24,10 @@ pub const ObjectId = struct {
     }
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
-        var hex: [24]u8 = undefined;
-        var i: usize = 0;
-        for (self.bytes) |b| {
-            hex[i] = HEX_CHARS[b >> 4 & 0xF];
-            i += 1;
-            hex[i] = HEX_CHARS[b & 0xF];
-            i += 1;
-        }
-
         try out.print(
             \\{{"$oid":"{s}"}}
         ,
-            .{&hex},
+            .{std.fmt.bytesToHex(self.bytes, .lower)},
         );
     }
 };
@@ -321,6 +309,7 @@ pub const Binary = struct {
     }
 };
 
+/// An enumeration of Bson types
 pub const RawBson = union(enum) {
     double: Double,
     string: []const u8,
@@ -376,9 +365,9 @@ pub const RawBson = union(enum) {
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         switch (self) {
             .document => |v| {
-                // for (v.elements) |elem| {
-                //     elem.v.deinit(allocator);
-                // }
+                for (v.elements) |elem| {
+                    elem.v.deinit(allocator);
+                }
                 allocator.free(v.elements);
             },
             else => {},
