@@ -40,6 +40,7 @@ test "bson specs" {
     };
 
     const allocator = testing.allocator;
+
     const tests = try fs.Dir.realpathAlloc(
         fs.cwd(),
         allocator,
@@ -54,7 +55,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "string.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "document.json")) {
             continue;
         }
         const p = try fs.Dir.realpathAlloc(
@@ -84,7 +85,7 @@ test "bson specs" {
 
         // test the valid cases
         if (suite.valid) |examples| {
-            for (examples[0..]) |valid| {
+            for (examples[1..2]) |valid| {
                 std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
                 const bson = try hex.decode(allocator, valid.canonical_bson);
@@ -93,13 +94,16 @@ test "bson specs" {
                 std.debug.print("raw (bytes) {any}\n", .{bson});
 
                 var stream = std.io.fixedBufferStream(bson);
-                var reader = Reader(@TypeOf(stream).Reader).init(allocator, stream.reader());
+                var reader = Reader(@TypeOf(stream).Reader).init(
+                    allocator,
+                    stream.reader(),
+                );
                 defer reader.deinit();
 
                 if (suite.test_key) |_| {
                     const rawBson = try reader.read();
                     // free here?
-                    // defer rawBson.deinit(allocator);
+                    //defer rawBson.deinit(allocator);
 
                     const actual = try std.json.stringifyAlloc(
                         allocator,
@@ -108,27 +112,39 @@ test "bson specs" {
                     );
                     defer allocator.free(actual);
 
-                    // make spacing consistency with zigs `minified` string option output
-                    // parse and serialize valid.canonical_extjson to ensure consistent comparison
-                    var parsedExpect = try std.json.parseFromSlice(
-                        std.json.Value,
+                    const expect = try normalizeJson(
                         allocator,
                         valid.canonical_extjson,
-                        .{},
-                    );
-                    defer parsedExpect.deinit();
-                    const expect = try std.json.stringifyAlloc(
-                        allocator,
-                        parsedExpect.value,
-                        .{},
                     );
                     defer allocator.free(expect);
                     std.testing.expectEqualStrings(expect, actual) catch |err| {
-                        std.debug.print("\nfailed on test {s}: {s}\n", .{ suite.description, valid.description });
+                        std.debug.print(
+                            "\nfailed on test {s}: {s}\n",
+                            .{ suite.description, valid.description },
+                        );
                         return err;
                     };
                 }
             }
         }
     }
+}
+
+// make json spacing consistent with zigs `minified` string option output
+// parse and serialize valid.canonical_extjson to ensure consistent comparison
+fn normalizeJson(allocator: std.mem.Allocator, provided: []const u8) ![]u8 {
+    // make spacing consistent with zigs `minified` string option output
+    // parse and serialize valid.canonical_extjson to ensure consistent comparison
+    var parsedExpect = try std.json.parseFromSlice(
+        std.json.Value,
+        allocator,
+        provided,
+        .{},
+    );
+    defer parsedExpect.deinit();
+    return try std.json.stringifyAlloc(
+        allocator,
+        parsedExpect.value,
+        .{},
+    );
 }

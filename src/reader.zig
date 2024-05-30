@@ -1,7 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
 const RawBson = types.RawBson;
-const Type = types.Type;
 
 /// see https://bsonspec.org/spec.html
 pub fn Reader(comptime T: type) type {
@@ -37,7 +36,7 @@ pub fn Reader(comptime T: type) type {
 
             while (self.reader.bytes_read < len - 1) {
                 std.log.debug("bytes read {d}, total bytes {d}", .{ self.reader.bytes_read, len });
-                const tpe = Type.fromInt(try self.readI8());
+                const tpe = types.Type.fromInt(try self.readI8());
                 const name = try self.readCStr();
                 const element = switch (tpe) {
                     .double => RawBson{
@@ -55,10 +54,6 @@ pub fn Reader(comptime T: type) type {
                         self.reader.bytes_read += child.reader.bytes_read;
                         //defer raw.deinit(self.arena.allocator());
                         break :blk raw;
-                        // switch (raw) {
-                        //     .document => |doc| break :blk RawBson{ .document = try doc.dupe(self.arena.allocator()) },
-                        //     else => unreachable,
-                        // }
                     },
                     .array => blk: {
                         std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
