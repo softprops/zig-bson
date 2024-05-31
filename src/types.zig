@@ -239,6 +239,22 @@ pub const JavaScript = struct {
     }
 };
 
+pub const JavaScriptWithScope = struct {
+    value: []const u8,
+    scope: Document,
+    pub fn init(value: []const u8, scope: Document) @This() {
+        return .{ .value = value, .scope = scope };
+    }
+    pub fn jsonStringify(self: @This(), out: anytype) !void {
+        try out.beginObject();
+        try out.objectField("$code");
+        try out.write(self.value);
+        try out.objectField("$scope");
+        try out.write(self.scope);
+        try out.endObject();
+    }
+};
+
 pub const DBPointer = struct {
     ref: []const u8,
     id: ObjectId,
@@ -320,7 +336,7 @@ pub const RawBson = union(enum) {
     regex: Regex,
     dbpointer: DBPointer,
     javascript: JavaScript,
-    javascript_with_scope: []const u8,
+    javascript_with_scope: JavaScriptWithScope,
     int32: Int32,
     int64: Int64,
     decimal128: Decimal128,
@@ -347,6 +363,7 @@ pub const RawBson = union(enum) {
             .null => out.write(null),
             .regex => |v| out.write(v),
             .javascript => |v| out.write(v),
+            .javascript_with_scope => |v| out.write(v),
             .dbpointer => |v| out.write(v),
             .symbol => |v| out.write(v),
             .int32 => |v| out.write(v),
@@ -355,10 +372,6 @@ pub const RawBson = union(enum) {
             .decimal128 => |v| out.write(v),
             .min_key => |v| out.write(v),
             .max_key => |v| out.write(v),
-            else => {
-                std.debug.print("failed to handle {any}\n", .{self});
-                unreachable;
-            },
         };
     }
 

@@ -134,6 +134,19 @@ pub fn Reader(comptime T: type) type {
                     .javascript => blk: {
                         break :blk RawBson{ .javascript = types.JavaScript.init(try self.readStr()) };
                     },
+                    .javascript_with_scope => blk: {
+                        _ = try self.readI32();
+                        const code = try self.readStr();
+                        var child = self.fork();
+                        const raw = try child.read();
+                        self.reader.bytes_read += child.reader.bytes_read;
+                        switch (raw) {
+                            .document => |doc| break :blk RawBson{
+                                .javascript_with_scope = types.JavaScriptWithScope.init(code, doc),
+                            },
+                            else => unreachable,
+                        }
+                    },
                     .symbol => blk: {
                         break :blk RawBson{ .symbol = types.Symbol.init(try self.readStr()) };
                     },
@@ -168,10 +181,6 @@ pub fn Reader(comptime T: type) type {
                     },
                     .min_key => RawBson{ .min_key = types.MinKey{} },
                     .max_key => RawBson{ .max_key = types.MaxKey{} },
-                    else => {
-                        std.log.err("unsupported type {any}", .{tpe});
-                        @panic("unsupported type");
-                    },
                 };
                 try elements.append(.{ .k = name, .v = element });
             }
