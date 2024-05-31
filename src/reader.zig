@@ -21,10 +21,7 @@ pub fn Reader(comptime T: type) type {
         /// create a new Reader starting where this reader left off, sharing allocation states so that it only needs
         /// freed once
         fn fork(self: *@This()) @This() {
-            return .{
-                .reader = std.io.countingReader(self.reader.child_reader),
-                .arena = self.arena,
-            };
+            return init(self.arena.allocator(), self.reader.child_reader);
         }
 
         pub fn deinit(self: *@This()) void {
@@ -181,7 +178,7 @@ pub fn Reader(comptime T: type) type {
 
             std.log.debug("finished with fields...", .{});
             if (try self.reader.reader().readByte() != 0) {
-                std.log.debug("warning: invalid end of stream", .{});
+                std.log.err("warning: invalid end of stream", .{});
                 return error.InvalidEndOfStream;
             }
             std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
