@@ -214,11 +214,27 @@ pub const Double = struct {
         return .{ .value = value };
     }
     pub fn jsonStringify(self: @This(), out: anytype) !void {
-        if (@round(self.value) == self.value) {
+        if (std.math.isNan(self.value)) {
+            try out.print(
+                \\{{"$numberDouble":"NaN"}}
+            , .{});
+        } else if (std.math.isPositiveInf(self.value)) {
+            std.debug.print("{d} is inf\n", .{self.value});
+            try out.print(
+                \\{{"$numberDouble":"Infinity"}}
+            , .{});
+        } else if (std.math.isNegativeInf(self.value)) {
+            std.debug.print("{d} is inf\n", .{self.value});
+            try out.print(
+                \\{{"$numberDouble":"-Infinity"}}
+            , .{});
+            // fixme: is there a better way to detect no decimal places?
+        } else if (@round(self.value) == self.value) {
             try out.print(
                 \\{{"$numberDouble":"{d:.1}"}}
             , .{self.value});
         } else {
+            std.debug.print("{d} is a normal number\n", .{self.value});
             try out.print(
                 \\{{"$numberDouble":"{d}"}}
             , .{self.value});

@@ -25,7 +25,6 @@ pub fn Reader(comptime T: type) type {
         }
 
         pub fn deinit(self: *@This()) void {
-            std.debug.print("releasing arena memory...\n", .{});
             self.arena.deinit();
         }
 
@@ -47,18 +46,11 @@ pub fn Reader(comptime T: type) type {
                         .string = try self.readStr(),
                     },
                     .document => blk: {
-                        std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
                         var child = self.fork();
-                        // fixme: leak?
                         const raw = try child.read();
                         // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
                         break :blk raw;
-                        // defer raw.deinit(self.arena.allocator());
-                        // switch (raw) {
-                        //     .document => |v| break :blk RawBson{ .document = try v.dupe(self.arena.allocator()) },
-                        //     else => unreachable,
-                        // }
                     },
                     .array => blk: {
                         std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
@@ -74,7 +66,6 @@ pub fn Reader(comptime T: type) type {
                                 for (doc.elements) |elem| {
                                     elems.appendAssumeCapacity(elem.v);
                                 }
-                                // caller owns freeing this
                                 break :blk RawBson{ .array = try elems.toOwnedSlice() };
                             },
                             else => unreachable,
@@ -192,7 +183,6 @@ pub fn Reader(comptime T: type) type {
             }
             std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
 
-            // caller owns freeing elements
             return RawBson{ .document = types.Document.init(try elements.toOwnedSlice()) };
         }
 
@@ -212,7 +202,6 @@ pub fn Reader(comptime T: type) type {
             return (try self.reader.reader().readUntilDelimiterOrEofAlloc(self.arena.allocator(), 0, std.math.maxInt(usize))) orelse "";
         }
 
-        /// caller must free returned bytes
         inline fn readStr(self: *@This()) ![]u8 {
             const strLen = try self.readI32();
             var buf = try std.ArrayList(u8).initCapacity(
