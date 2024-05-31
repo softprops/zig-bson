@@ -365,9 +365,9 @@ pub const RawBson = union(enum) {
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         switch (self) {
             .document => |v| {
-                for (v.elements) |elem| {
-                    elem.v.deinit(allocator);
-                }
+                // for (v.elements) |elem| {
+                //     elem.v.deinit(allocator);
+                // }
                 allocator.free(v.elements);
             },
             else => {},

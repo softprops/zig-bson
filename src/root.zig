@@ -54,7 +54,7 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        if (!std.mem.endsWith(u8, entry.path, "document.json")) {
+        if (!std.mem.endsWith(u8, entry.path, "array.json")) {
             continue;
         }
         var pathBuf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
