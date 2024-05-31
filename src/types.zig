@@ -191,11 +191,15 @@ pub const Int64 = struct {
 
 /// https://github.com/mongodb/specifications/blob/master/source/bson-decimal128/decimal128.md
 pub const Decimal128 = struct {
-    value: []const u8,
+    value: [16]u8,
+    fn toF128(self: @This()) f128 {
+        return @bitCast(self.value);
+    }
     pub fn jsonStringify(self: @This(), out: anytype) !void {
+        // todo: handle NaN
         try out.print(
-            \\{{"$numberDecimal":"{s}"}}
-        , .{self.value});
+            \\{{"$numberDecimal":"{d}"}}
+        , .{self.toF128()});
     }
 };
 

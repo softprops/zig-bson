@@ -112,11 +112,7 @@ pub fn Reader(comptime T: type) type {
                         const ref = try self.readStr();
 
                         var id_bytes: [12]u8 = undefined;
-                        const count = try self.reader.reader().readAll(&id_bytes);
-                        if (count != 12) {
-                            std.log.debug("only read {d} objectId bytes", .{count});
-                            return error.TooFewObjectIdBytes;
-                        }
+                        _ = try self.reader.reader().readAll(&id_bytes);
 
                         break :blk RawBson{
                             .dbpointer = types.DBPointer.init(ref, types.ObjectId.fromBytes(id_bytes)),
@@ -160,13 +156,10 @@ pub fn Reader(comptime T: type) type {
                     },
                     .decimal128 => blk: {
                         var bytes: [16]u8 = undefined;
-                        const count = try self.reader.reader().readAll(&bytes);
-                        if (count != 16) {
-                            return error.TooFewDecimal128Bytes;
-                        }
+                        _ = try self.reader.reader().readAll(&bytes);
                         break :blk RawBson{
                             .decimal128 = types.Decimal128{
-                                .value = &bytes,
+                                .value = bytes,
                             },
                         };
                     },
