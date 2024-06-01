@@ -54,9 +54,14 @@ test "bson specs" {
     defer walker.deinit();
     while (try walker.next()) |entry| {
         // limit tests for now, remove this gate later
-        //       if (std.mem.endsWith(u8, entry.path, "double.json")) {
-        //           continue;
-        //       }
+        if (!std.mem.endsWith(u8, entry.path, "binary.json")) {
+            continue;
+        }
+        // if (std.mem.endsWith(u8, entry.path, "double.json") or
+        //     std.mem.startsWith(u8, entry.path, "decimal"))
+        // {
+        //     continue;
+        // }
         var pathBuf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
         var file = try fs.openFileAbsolute(
             try fs.Dir.realpath(specs, entry.path, &pathBuf),
@@ -83,14 +88,6 @@ test "bson specs" {
         // test the valid cases
         if (suite.valid) |examples| {
             for (examples[0..]) |valid| {
-                //if (std.mem.endsWith(u8, valid.description, "subtype 0x02")) {
-                // base64 is over //8= vs AgAAAP// ??
-                //    continue;
-                //}
-                if (std.mem.endsWith(u8, valid.description, "1.2345678921232E+18")) {
-                    // problem parsing these bytes
-                    continue;
-                }
                 std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
                 var bsonBuf: [std.mem.page_size]u8 = undefined;

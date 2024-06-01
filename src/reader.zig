@@ -79,7 +79,22 @@ pub fn Reader(comptime T: type) type {
                         try buf.resize(@intCast(binLen));
                         const bytes = try buf.toOwnedSlice();
                         _ = try self.reader.reader().readAll(bytes);
-                        break :blk RawBson{ .binary = types.Binary.init(bytes, st) };
+                        break :blk switch (st) {
+                            .binary_old => old: {
+                                // binary old has a special case format where the opaque list of bytes
+                                // contain a len and an inner opaque list of bytes
+                                var fbs = std.io.fixedBufferStream(bytes);
+                                var innerReader = fbs.reader();
+                                const innerLen = try innerReader.readInt(i32, .little);
+                                var innerBuf = try std.ArrayList(u8).initCapacity(self.arena.allocator(), @intCast(binLen));
+                                defer innerBuf.deinit();
+                                try innerBuf.resize(@intCast(innerLen));
+                                const innerBytes = try innerBuf.toOwnedSlice();
+                                _ = try innerReader.readAll(innerBytes);
+                                break :old RawBson{ .binary = types.Binary.init(innerBytes, st) };
+                            },
+                            else => RawBson{ .binary = types.Binary.init(bytes, st) },
+                        };
                     },
                     .undefined => RawBson{ .undefined = {} },
                     .object_id => blk: {

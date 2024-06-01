@@ -162,10 +162,13 @@ pub const Document = struct {
         return .{ .elements = elements };
     }
 
-    pub fn dupe(self: @This(), allocator: std.mem.Allocator) !@This() {
-        const duped = try allocator.dupe(Element, self.elements);
-        defer allocator.free(self.elements);
-        return init(duped);
+    pub fn get(self: @This(), name: []const u8) ?RawBson {
+        for (self.elements) |e| {
+            if (std.mem.eql(u8, name, e.k)) {
+                return e.v;
+            }
+        }
+        return null;
     }
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
