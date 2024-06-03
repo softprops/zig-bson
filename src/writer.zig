@@ -35,10 +35,10 @@ pub fn Writer(comptime T: type) type {
                         buf.writer(),
                     );
                     for (v.elements) |elem| {
-                        try docWriter.writeInt(i8, elem.v.toType().toInt());
-                        _ = try docWriter.writeAll(elem.k);
+                        try docWriter.writeInt(i8, elem.@"1".toType().toInt());
+                        _ = try docWriter.writeAll(elem.@"0");
                         try docWriter.writeSentinelByte();
-                        try docWriter.write(elem.v);
+                        try docWriter.write(elem.@"1");
                     }
 
                     // we add 5 to account for 1. the 4 byte len itself and 2. 1 extra null byte at the end
@@ -135,27 +135,28 @@ test Writer {
     defer buf.deinit();
     var writer = Writer(@TypeOf(buf.writer())).init(allocator, buf.writer());
     defer writer.deinit();
+
     const doc = RawBson.document(
         &[_]Document.Element{
             .{
-                .k = "a",
-                .v = types.RawBson.string("a"),
+                "a",
+                types.RawBson.string("a"),
             },
             .{
-                .k = "b",
-                .v = types.RawBson.boolean(true),
+                "b",
+                types.RawBson.boolean(true),
             },
             .{
-                .k = "c",
-                .v = types.RawBson.minKey(),
+                "c",
+                types.RawBson.minKey(),
             },
             .{
-                .k = "d",
-                .v = types.RawBson.maxKey(),
+                "d",
+                types.RawBson.maxKey(),
             },
             .{
-                .k = "e",
-                .v = types.RawBson.array(
+                "e",
+                types.RawBson.array(
                     &[_]RawBson{
                         RawBson.int32(10),
                         RawBson.int32(11),
@@ -164,8 +165,8 @@ test Writer {
                 ),
             },
             .{
-                .k = "f",
-                .v = RawBson.datetime(0),
+                "f",
+                RawBson.datetime(0),
             },
         },
     );

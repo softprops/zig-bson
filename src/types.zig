@@ -151,7 +151,7 @@ test "MaxKey.jsonStringify" {
 }
 
 pub const Document = struct {
-    pub const Element = struct { k: []const u8, v: RawBson };
+    pub const Element = struct { []const u8, RawBson };
     elements: []const Element,
 
     pub fn init(elements: []const Element) @This() {
@@ -171,8 +171,8 @@ pub const Document = struct {
         try out.beginObject();
 
         for (self.elements) |elem| {
-            try out.objectField(elem.k);
-            try out.write(elem.v);
+            try out.objectField(elem.@"0");
+            try out.write(elem.@"1");
         }
 
         try out.endObject();
@@ -373,7 +373,7 @@ pub const RawBson = union(enum) {
     }
 
     /// convenience method for creating a new RawBson decimal 128
-    pub fn decimal128(bytes: [16] u8) @This() {
+    pub fn decimal128(bytes: [16]u8) @This() {
         return .{ .decimal128 = .{ .value = bytes } };
     }
 

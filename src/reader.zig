@@ -59,7 +59,7 @@ pub fn Reader(comptime T: type) type {
                                 var elems = try std.ArrayList(RawBson).initCapacity(self.arena.allocator(), doc.elements.len);
                                 defer elems.deinit();
                                 for (doc.elements) |elem| {
-                                    elems.appendAssumeCapacity(elem.v);
+                                    elems.appendAssumeCapacity(elem.@"1");
                                 }
                                 break :blk RawBson.array(try elems.toOwnedSlice());
                             },
@@ -135,7 +135,7 @@ pub fn Reader(comptime T: type) type {
                     .min_key => RawBson.minKey(),
                     .max_key => RawBson.maxKey(),
                 };
-                try elements.append(.{ .k = name, .v = element });
+                try elements.append(.{ name, element });
             }
 
             const lastByte = try self.reader.reader().readByte();
