@@ -138,36 +138,18 @@ test Writer {
 
     const doc = RawBson.document(
         &[_]Document.Element{
-            .{
-                "a",
-                types.RawBson.string("a"),
-            },
-            .{
-                "b",
-                types.RawBson.boolean(true),
-            },
-            .{
-                "c",
-                types.RawBson.minKey(),
-            },
-            .{
-                "d",
-                types.RawBson.maxKey(),
-            },
-            .{
-                "e",
-                types.RawBson.array(
-                    &[_]RawBson{
-                        RawBson.int32(10),
-                        RawBson.int32(11),
-                        RawBson.int32(12),
-                    },
-                ),
-            },
-            .{
-                "f",
-                RawBson.datetime(0),
-            },
+            .{ "a", types.RawBson.string("a") },
+            .{ "b", types.RawBson.boolean(true) },
+            .{ "c", types.RawBson.minKey() },
+            .{ "d", types.RawBson.maxKey() },
+            .{ "e", types.RawBson.array(
+                &[_]RawBson{
+                    RawBson.int32(10),
+                    RawBson.int32(11),
+                    RawBson.int32(12),
+                },
+            ) },
+            .{ "f", RawBson.datetime(0) },
         },
     );
     try writer.write(doc);
