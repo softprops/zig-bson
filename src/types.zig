@@ -75,10 +75,6 @@ test Datetime {
 pub const Regex = struct {
     pattern: []const u8,
     options: []const u8,
-    pub fn init(pattern: []const u8, options: []const u8) @This() {
-        // todo: validate rules
-        return .{ .pattern = pattern, .options = options };
-    }
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.beginObject();
@@ -302,9 +298,6 @@ pub const DBPointer = struct {
 
 pub const Symbol = struct {
     value: []const u8,
-    pub fn init(value: []const u8) @This() {
-        return .{ .value = value };
-    }
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.beginObject();
         try out.objectField("$symbol");
@@ -371,6 +364,117 @@ pub const RawBson = union(enum) {
     undefined: void,
     max_key: MaxKey,
     min_key: MinKey,
+
+    /// convenience method for creating a new RawBson string
+    pub fn string(value: []const u8) @This() {
+        return .{ .string = value };
+    }
+
+    /// convenience method for creating a new RawBson double
+    pub fn double(value: f64) @This() {
+        return .{ .double = Double.init(value) };
+    }
+
+    /// convenience method for creating a new RawBson boolean
+    pub fn boolean(value: bool) @This() {
+        return .{ .boolean = value };
+    }
+
+    /// convenience method for creating a new RawBson document
+    pub fn document(elements: []const Document.Element) @This() {
+        return .{ .document = Document.init(elements) };
+    }
+
+    /// convenience method for creating a new RawBson array
+    pub fn array(elements: []const RawBson) @This() {
+        return .{ .array = elements };
+    }
+
+    /// convenience method for creating a new RawBson null
+    pub fn @"null"() @This() {
+        return .{ .null = {} };
+    }
+
+    /// convenience method for creating a new RawBson undefined
+    pub fn @"undefined"() @This() {
+        return .{ .undefined = {} };
+    }
+
+    /// convenience method for creating a new RawBson min key
+    pub fn minKey() @This() {
+        return .{ .min_key = .{} };
+    }
+
+    /// convenience method for creating a new RawBson max key
+    pub fn maxKey() @This() {
+        return .{ .max_key = .{} };
+    }
+
+    /// convenience method for creating a new RawBson int64
+    pub fn int64(value: i64) @This() {
+        return .{ .int64 = .{ .value = value } };
+    }
+
+    /// convenience method for creating a new RawBson int32
+    pub fn int32(value: i32) @This() {
+        return .{ .int32 = .{ .value = value } };
+    }
+
+    /// convenience method for creating a new RawBson symbol
+    pub fn symbol(value: []const u8) @This() {
+        return .{ .symbol = .{ .value = value } };
+    }
+
+    /// convenience method for creating a new RawBson regex
+    pub fn regex(pattern: []const u8, options: []const u8) @This() {
+        return .{ .regex = .{ .pattern = pattern, .options = options } };
+    }
+
+    /// convenience method for creating a new RawBson timestamp
+    pub fn timestamp(increment: u32, ts: u32) @This() {
+        return .{ .timestamp = Timestamp.init(increment, ts) };
+    }
+
+    /// convenience method for creating a new RawBson javaScript
+    pub fn javaScript(value: []const u8) @This() {
+        return .{ .javascript = JavaScript.init(value) };
+    }
+
+    /// convenience method for creating a new RawBson object id
+    pub fn objectId(bytes: [12]u8) @This() {
+        return .{ .object_id = ObjectId.fromBytes(bytes) };
+    }
+
+    /// convenience method for creating a new RawBson datatime
+    pub fn datatime(millis: i64) @This() {
+        return .{ .datetime = Datetime.fromMillis(millis) };
+    }
+
+    pub fn toType(self: @This()) Type {
+        return switch (self) {
+            .double => .double,
+            .string => .string,
+            .document => .document,
+            .array => .array,
+            .boolean => .boolean,
+            .null => .null,
+            .regex => .regex,
+            .dbpointer => .dbpointer,
+            .javascript => .javascript,
+            .javascript_with_scope => .javascript_with_scope,
+            .int32 => .int32,
+            .int64 => .int64,
+            .decimal128 => .decimal128,
+            .timestamp => .timestamp,
+            .binary => .binary,
+            .object_id => .object_id,
+            .datetime => .datetime,
+            .symbol => .symbol,
+            .undefined => .undefined,
+            .max_key => .max_key,
+            .min_key => .min_key,
+        };
+    }
 
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         return try switch (self) {
@@ -458,6 +562,10 @@ pub const Type = enum(i8) {
         return @enumFromInt(int);
     }
 
+    pub fn toInt(self: @This()) i8 {
+        return @intFromEnum(self);
+    }
+
     pub fn format(
         self: @This(),
         comptime _: []const u8,
@@ -485,6 +593,10 @@ pub const SubType = enum(u8) {
 
     pub fn fromInt(int: u8) @This() {
         return @enumFromInt(int);
+    }
+
+    pub fn toInt(self: @This()) u8 {
+        return @intFromEnum(self);
     }
 
     fn hex(self: @This()) [2]u8 {
