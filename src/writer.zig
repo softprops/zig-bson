@@ -163,7 +163,10 @@ test Writer {
                     },
                 ),
             },
-            .{ .k = "f", .v = RawBson.datatime(0) },
+            .{
+                .k = "f",
+                .v = RawBson.datetime(0),
+            },
         },
     );
     try writer.write(doc);

@@ -445,8 +445,8 @@ pub const RawBson = union(enum) {
         return .{ .object_id = ObjectId.fromBytes(bytes) };
     }
 
-    /// convenience method for creating a new RawBson datatime
-    pub fn datatime(millis: i64) @This() {
+    /// convenience method for creating a new RawBson datetime
+    pub fn datetime(millis: i64) @This() {
         return .{ .datetime = Datetime.fromMillis(millis) };
     }
 
