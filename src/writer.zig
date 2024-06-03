@@ -36,14 +36,14 @@ pub fn Writer(comptime T: type) type {
                     );
                     for (v.elements) |elem| {
                         try docWriter.writeInt(i8, elem.v.toType().toInt());
-                        _ = try docWriter.writer.writer().writeAll(elem.k);
+                        _ = try docWriter.writeAll(elem.k);
                         try docWriter.writeSentinelByte();
                         try docWriter.write(elem.v);
                     }
 
                     // we add 5 to account for 1. the 4 byte len itself and 2. 1 extra null byte at the end
                     try self.writeInt(i32, @intCast(buf.items.len + 5));
-                    try self.writer.writer().writeAll(try buf.toOwnedSlice());
+                    try self.writeAll(try buf.toOwnedSlice());
                     try self.writeSentinelByte();
                 },
                 .array => |v| {
@@ -63,10 +63,10 @@ pub fn Writer(comptime T: type) type {
 
                     // we add 5 to account for 1. the 4 byte len itself and 2. 1 extra null byte at the end
                     try self.writeInt(i32, @intCast(buf.items.len + 5));
-                    try self.writer.writer().writeAll(try buf.toOwnedSlice());
+                    try self.writeAll(try buf.toOwnedSlice());
                     try self.writeSentinelByte();
                 },
-                .boolean => |v| try self.writer.writer().writeInt(i8, if (v) 1 else 0, .little),
+                .boolean => |v| try self.writeInt(i8, if (v) 1 else 0),
                 .regex => |v| {
                     try self.writeCStr(v.pattern);
                     try self.writeCStr(v.options);
@@ -91,9 +91,9 @@ pub fn Writer(comptime T: type) type {
                 .binary => |v| {
                     try self.writeInt(i32, @intCast(v.value.len));
                     try self.writeInt(u8, v.subtype.toInt());
-                    _ = try self.writer.writer().writeAll(v.value);
+                    _ = try self.writeAll(v.value);
                 },
-                .object_id => |v| try self.writer.writer().writeAll(&v.bytes),
+                .object_id => |v| try self.writeAll(&v.bytes),
                 .datetime => |v| try self.writeInt(i64, v.millis),
                 .symbol => |v| try self.writeString(v.value),
                 // noops
@@ -105,14 +105,18 @@ pub fn Writer(comptime T: type) type {
             try self.writer.writer().writeInt(INT, value, .little);
         }
 
+        fn writeAll(self: *@This(), bytes: []const u8) !void {
+            try self.writer.writer().writeAll(bytes);
+        }
+
         fn writeString(self: *@This(), value: []const u8) !void {
             try self.writeInt(i32, @intCast(value.len + 1));
-            try self.writer.writer().writeAll(value);
+            try self.writeAll(value);
             try self.writeSentinelByte();
         }
 
         fn writeCStr(self: *@This(), value: []const u8) !void {
-            try self.writer.writer().writeAll(value);
+            try self.writeAll(value);
             try self.writeSentinelByte();
         }
 
