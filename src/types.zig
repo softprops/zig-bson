@@ -457,6 +457,11 @@ pub const RawBson = union(enum) {
         return .{ .datetime = Datetime.fromMillis(millis) };
     }
 
+    /// convenience method for creating a new RawBson binary
+    pub fn binary(bytes: []const u8, st: SubType) @This() {
+        return .{ .binary = Binary.init(bytes, st) };
+    }
+
     pub fn toType(self: @This()) Type {
         return switch (self) {
             .double => .double,

@@ -86,7 +86,7 @@ pub fn Reader(comptime T: type) type {
                                 try innerBuf.resize(@intCast(innerLen));
                                 const innerBytes = try innerBuf.toOwnedSlice();
                                 _ = try innerReader.readAll(innerBytes);
-                                break :old RawBson{ .binary = types.Binary.init(innerBytes, st) };
+                                break :old RawBson.binary(innerBytes, st);
                             },
                             else => RawBson{ .binary = types.Binary.init(bytes, st) },
                         };
