@@ -261,9 +261,6 @@ pub const JavaScript = struct {
 pub const JavaScriptWithScope = struct {
     value: []const u8,
     scope: Document,
-    pub fn init(value: []const u8, scope: Document) @This() {
-        return .{ .value = value, .scope = scope };
-    }
     pub fn jsonStringify(self: @This(), out: anytype) !void {
         try out.beginObject();
         try out.objectField("$code");
@@ -375,6 +372,11 @@ pub const RawBson = union(enum) {
         return .{ .double = Double.init(value) };
     }
 
+    /// convenience method for creating a new RawBson decimal 128
+    pub fn decimal128(bytes: [16] u8) @This() {
+        return .{ .decimal128 = .{ .value = bytes } };
+    }
+
     /// convenience method for creating a new RawBson boolean
     pub fn boolean(value: bool) @This() {
         return .{ .boolean = value };
@@ -438,6 +440,11 @@ pub const RawBson = union(enum) {
     /// convenience method for creating a new RawBson javaScript
     pub fn javaScript(value: []const u8) @This() {
         return .{ .javascript = JavaScript.init(value) };
+    }
+
+    /// convenience method for creating a new RawBson javaScript (with scope)
+    pub fn javaScriptWithScope(value: []const u8, scope: Document) @This() {
+        return .{ .javascript_with_scope = .{ .value = value, .scope = scope } };
     }
 
     /// convenience method for creating a new RawBson object id

@@ -98,11 +98,7 @@ pub fn Reader(comptime T: type) type {
                         break :blk RawBson.objectId(bytes);
                     },
                     .boolean => RawBson.boolean(try self.readI8() == 1),
-                    .datetime => RawBson{
-                        .datetime = types.Datetime.fromMillis(
-                            try self.readI64(),
-                        ),
-                    },
+                    .datetime => RawBson.datetime(try self.readI64()),
                     .null => RawBson.null(),
                     .regex => RawBson.regex(try self.readCStr(), try self.readCStr()),
                     .dbpointer => blk: {
@@ -123,9 +119,7 @@ pub fn Reader(comptime T: type) type {
                         const raw = try child.read();
                         self.reader.bytes_read += child.reader.bytes_read;
                         switch (raw) {
-                            .document => |doc| break :blk RawBson{
-                                .javascript_with_scope = types.JavaScriptWithScope.init(code, doc),
-                            },
+                            .document => |doc| break :blk RawBson.javaScriptWithScope(code, doc),
                             else => unreachable,
                         }
                     },
@@ -136,11 +130,7 @@ pub fn Reader(comptime T: type) type {
                     .decimal128 => blk: {
                         var bytes: [16]u8 = undefined;
                         _ = try self.reader.reader().readAll(&bytes);
-                        break :blk RawBson{
-                            .decimal128 = types.Decimal128{
-                                .value = bytes,
-                            },
-                        };
+                        break :blk RawBson.decimal128(bytes);
                     },
                     .min_key => RawBson.minKey(),
                     .max_key => RawBson.maxKey(),
