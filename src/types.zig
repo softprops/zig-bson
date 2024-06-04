@@ -1,5 +1,5 @@
 //!
-//! All bson types declare implementions of [Canonical Extended JSON formats](https://github.com/mongodb/specifications/blob/master/source/extended-json.md). When
+//! All RawBson types provide implementions of [Canonical Extended JSON formats](https://github.com/mongodb/specifications/blob/master/source/extended-json.md). When
 //! using std.json, these implementation will go into effect
 //!
 const std = @import("std");
@@ -160,8 +160,8 @@ pub const Document = struct {
 
     pub fn get(self: @This(), name: []const u8) ?RawBson {
         for (self.elements) |e| {
-            if (std.mem.eql(u8, name, e.k)) {
-                return e.v;
+            if (std.mem.eql(u8, name, e.@"0")) {
+                return e.@"1";
             }
         }
         return null;
@@ -222,12 +222,10 @@ pub const Double = struct {
                 \\{{"$numberDouble":"NaN"}}
             , .{});
         } else if (std.math.isPositiveInf(self.value)) {
-            std.debug.print("{d} is inf\n", .{self.value});
             try out.print(
                 \\{{"$numberDouble":"Infinity"}}
             , .{});
         } else if (std.math.isNegativeInf(self.value)) {
-            std.debug.print("{d} is inf\n", .{self.value});
             try out.print(
                 \\{{"$numberDouble":"-Infinity"}}
             , .{});
@@ -237,7 +235,6 @@ pub const Double = struct {
                 \\{{"$numberDouble":"{d:.1}"}}
             , .{self.value});
         } else {
-            std.debug.print("{d} is a normal number\n", .{self.value});
             try out.print(
                 \\{{"$numberDouble":"{d}"}}
             , .{self.value});

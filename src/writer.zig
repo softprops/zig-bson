@@ -2,9 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const RawBson = types.RawBson;
 
-/// A Writer serializes BSON to a provided io.Writer
-///
-/// see https://bsonspec.org/spec.html
+/// A Writer serializes BSON to a provided Writer type following the [BSON spec](https://bsonspec.org/spec.html)
 pub fn Writer(comptime T: type) type {
     return struct {
         writer: std.io.CountingWriter(T),
@@ -125,16 +123,21 @@ pub fn Writer(comptime T: type) type {
         }
     };
 }
+/// Creates a new BSON writer to serialize documents to an underlying writer
+/// Callers should call `deinit()` on after using the writer
+pub fn writer(allocator: std.mem.Allocator, underlying: anytype) Writer(@TypeOf(underlying)) {
+    return Writer(@TypeOf(underlying)).init(allocator, underlying);
+}
 
 test Writer {
     const Document = @import("types.zig").Document;
-    const Reader = @import("reader.zig").Reader;
+    const reader = @import("reader.zig").reader;
 
     const allocator = std.testing.allocator;
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
-    var writer = Writer(@TypeOf(buf.writer())).init(allocator, buf.writer());
-    defer writer.deinit();
+    var bsonWriter = writer(allocator, buf.writer());
+    defer bsonWriter.deinit();
 
     const doc = RawBson.document(
         &[_]Document.Element{
@@ -152,17 +155,17 @@ test Writer {
             .{ "f", RawBson.datetime(0) },
         },
     );
-    try writer.write(doc);
+    try bsonWriter.write(doc);
     const written = try buf.toOwnedSlice();
     defer allocator.free(written);
     var fbs = std.io.fixedBufferStream(written);
     const stream = fbs.reader();
 
-    var reader = Reader(@TypeOf(stream)).init(allocator, stream);
-    defer reader.deinit();
+    var bsonReader = reader(allocator, stream);
+    defer bsonReader.deinit();
     const actual = try std.json.stringifyAlloc(
         allocator,
-        try reader.read(),
+        try bsonReader.read(),
         .{},
     );
     defer allocator.free(actual);

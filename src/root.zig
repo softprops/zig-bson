@@ -1,10 +1,13 @@
 /// A [BSON](https://bsonspec.org/spec.html) encoding and decoding library
 ///
-/// see also https://www.mongodb.com/resources/basics/json-and-bson
+/// See also https://www.mongodb.com/resources/basics/json-and-bson
 const std = @import("std");
 
 pub const Reader = @import("reader.zig").Reader;
 pub const Writer = @import("writer.zig").Writer;
+pub const reader = @import("reader.zig").reader;
+pub const writer = @import("writer.zig").writer;
+pub const types = @import("types.zig");
 
 test {
     std.testing.refAllDecls(@This());
@@ -96,22 +99,22 @@ test "bson specs" {
                 if (std.mem.eql(u8, valid.description, "1.2345678921232E+18") or std.mem.eql(u8, valid.description, "-1.2345678921232E+18")) {
                     continue;
                 }
-                std.debug.print("\n{s}: {s}\n", .{ suite.description, valid.description });
+                std.debug.print("{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
                 var bsonBuf: [std.mem.page_size]u8 = undefined;
                 const bson = try std.fmt.hexToBytes(&bsonBuf, valid.canonical_bson);
 
-                std.debug.print("raw (bytes) {any}\n", .{bson});
+                //std.debug.print("raw (bytes) {any}\n", .{bson});
 
                 var stream = std.io.fixedBufferStream(bson);
-                var reader = Reader(@TypeOf(stream).Reader).init(
+                var bsonReader = reader(
                     allocator,
                     stream.reader(),
                 );
-                defer reader.deinit();
+                defer bsonReader.deinit();
 
                 if (suite.test_key) |_| {
-                    const rawBson = try reader.read();
+                    const rawBson = try bsonReader.read();
 
                     const actual = try std.json.stringifyAlloc(
                         allocator,
