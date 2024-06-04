@@ -9,9 +9,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-
     const doc = RawBson.document(
         &[_]Document.Element{
             .{ "hello", RawBson.string("world") },
@@ -19,6 +16,8 @@ pub fn main() !void {
     );
 
     // write a document to a byte buffer
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
     var writer = bson.writer(
         allocator,
         buf.writer(),
@@ -37,7 +36,6 @@ pub fn main() !void {
 
     // read it back
     var fbs = std.io.fixedBufferStream(bytes);
-
     var reader = bson.reader(allocator, fbs.reader());
     defer reader.deinit();
     switch (try reader.read()) {
