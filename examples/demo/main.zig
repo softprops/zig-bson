@@ -28,9 +28,12 @@ pub fn main() !void {
 
     const bytes = try buf.toOwnedSlice();
     defer allocator.free(bytes);
-    std.debug.print("{s}", .{
-        std.fmt.fmtSliceHexLower(bytes),
-    });
+    std.debug.print(
+        "{s}",
+        .{
+            std.fmt.fmtSliceHexLower(bytes),
+        },
+    );
 
     // read it back
     var fbs = std.io.fixedBufferStream(bytes);
@@ -40,10 +43,15 @@ pub fn main() !void {
     switch (try reader.read()) {
         .document => |v| {
             if (v.get("hello")) |value| {
-                std.debug.print("deserialiezd hello '{s}'!", .{switch (value) {
-                    .string => |s| s,
-                    else => unreachable,
-                }});
+                std.debug.print(
+                    "deserialiezd hello '{s}'!",
+                    .{
+                        switch (value) {
+                            .string => |s| s,
+                            else => unreachable,
+                        },
+                    },
+                );
             }
         },
         else => unreachable,
