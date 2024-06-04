@@ -44,7 +44,7 @@ pub fn main() !void {
         .document => |v| {
             if (v.get("hello")) |value| {
                 std.debug.print(
-                    "deserialiezd hello '{s}'!",
+                    "deserialized hello '{s}'!",
                     .{
                         switch (value) {
                             .string => |s| s,
