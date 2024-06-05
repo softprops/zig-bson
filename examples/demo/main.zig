@@ -10,7 +10,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const doc = RawBson.document(
-        &[_]Document.Element{
+        &.{
             .{ "hello", RawBson.string("world") },
         },
     );

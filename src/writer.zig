@@ -132,7 +132,6 @@ pub fn writer(allocator: std.mem.Allocator, underlying: anytype) Writer(@TypeOf(
 }
 
 test Writer {
-    const Document = @import("types.zig").Document;
     const reader = @import("reader.zig").reader;
 
     const allocator = std.testing.allocator;
@@ -142,7 +141,7 @@ test Writer {
     defer bsonWriter.deinit();
 
     const doc = RawBson.document(
-        &[_]Document.Element{
+        &.{
             .{ "a", types.RawBson.string("a") },
             .{ "b", types.RawBson.boolean(true) },
             .{ "c", types.RawBson.minKey() },
