@@ -320,13 +320,10 @@ pub const Binary = struct {
         defer _ = gpa.deinit();
         const allocator = gpa.allocator();
         const encoder = std.base64.standard.Encoder;
-        var buf = try std.ArrayList(u8).initCapacity(allocator, encoder.calcSize(self.value.len));
-        defer buf.deinit();
-        try buf.resize(buf.capacity);
-        const slice = try buf.toOwnedSlice();
-        defer allocator.free(slice);
+        const dest = try allocator.alloc(u8, encoder.calcSize(self.value.len));
+        defer allocator.free(dest);
 
-        try out.write(encoder.encode(slice, self.value));
+        try out.write(encoder.encode(dest, self.value));
         try out.objectField("subType");
         try out.write(self.subtype.hex());
         try out.endObject();

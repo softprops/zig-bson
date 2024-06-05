@@ -11,16 +11,27 @@ pub fn build(b: *std.Build) !void {
 
     try b.modules.put(b.dupe("bson"), bson);
 
+    // unit tests
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-
     const run_unit_tests = b.addRunArtifact(unit_tests);
-
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    const benchmark_tests = b.addTest(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = &.{"bench"},
+    });
+
+    const run_benchmark_tests = b.addRunArtifact(benchmark_tests);
+
+    const benchmark_step = b.step("bench", "Run benchmark tests");
+    benchmark_step.dependOn(&run_benchmark_tests.step);
 
     inline for ([_]struct {
         name: []const u8,

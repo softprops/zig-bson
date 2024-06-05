@@ -22,6 +22,7 @@ pub fn Reader(comptime T: type) type {
             return init(self.arena.allocator(), self.reader.child_reader);
         }
 
+        /// callers sure ensure this is called to free an allocated memory
         pub fn deinit(self: *@This()) void {
             self.arena.deinit();
         }
@@ -54,12 +55,11 @@ pub fn Reader(comptime T: type) type {
                         switch (raw) {
                             .document => |doc| {
                                 // an array is just a document whose keys are array indexes. i.e { "0": "...", "1": "..." }
-                                var elems = try std.ArrayList(RawBson).initCapacity(self.arena.allocator(), doc.elements.len);
-                                defer elems.deinit();
-                                for (doc.elements) |elem| {
-                                    elems.appendAssumeCapacity(elem.@"1");
+                                var elems = try self.arena.allocator().alloc(RawBson, doc.elements.len);
+                                for (doc.elements, 0..) |elem, i| {
+                                    elems[i] = elem.@"1";
                                 }
-                                break :blk RawBson.array(try elems.toOwnedSlice());
+                                break :blk RawBson.array(elems);
                             },
                             else => unreachable,
                         }
@@ -67,10 +67,7 @@ pub fn Reader(comptime T: type) type {
                     .binary => blk: {
                         const binLen = try self.readI32();
                         const st = types.SubType.fromInt(try self.readU8());
-                        var buf = try std.ArrayList(u8).initCapacity(self.arena.allocator(), @intCast(binLen));
-                        defer buf.deinit();
-                        try buf.resize(@intCast(binLen));
-                        const bytes = try buf.toOwnedSlice();
+                        const bytes = try self.arena.allocator().alloc(u8, @intCast(binLen));
                         _ = try self.reader.reader().readAll(bytes);
                         break :blk switch (st) {
                             .binary_old => old: {
@@ -79,10 +76,7 @@ pub fn Reader(comptime T: type) type {
                                 var fbs = std.io.fixedBufferStream(bytes);
                                 var innerReader = fbs.reader();
                                 const innerLen = try innerReader.readInt(i32, .little);
-                                var innerBuf = try std.ArrayList(u8).initCapacity(self.arena.allocator(), @intCast(binLen));
-                                defer innerBuf.deinit();
-                                try innerBuf.resize(@intCast(innerLen));
-                                const innerBytes = try innerBuf.toOwnedSlice();
+                                const innerBytes = try self.arena.allocator().alloc(u8, @intCast(innerLen)); //try innerBuf.toOwnedSlice();
                                 _ = try innerReader.readAll(innerBytes);
                                 break :old RawBson.binary(innerBytes, st);
                             },
@@ -164,19 +158,14 @@ pub fn Reader(comptime T: type) type {
 
         inline fn readStr(self: *@This()) ![]u8 {
             const strLen = try self.readI32();
-            var buf = try std.ArrayList(u8).initCapacity(
-                self.arena.allocator(),
-                @intCast(strLen - 1),
-            );
-            defer buf.deinit();
-            try buf.resize(@intCast(strLen - 1));
-            var bytes = try buf.toOwnedSlice();
+            const bytes = try self.arena.allocator().alloc(u8, @intCast(strLen - 1));
             _ = try self.reader.reader().readAll(
-                bytes[0..],
+                bytes,
             );
             if (try self.reader.reader().readByte() != 0) {
                 return error.NullTerminatorNotFound;
             }
+            // data should be valid ut8
             if (!std.unicode.utf8ValidateSlice(bytes)) {
                 return error.InvalidUtf8;
             }

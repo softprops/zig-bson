@@ -1,6 +1,7 @@
 .{
     .name = "bson",
     .version = "0.1.0",
+    .dependencies = .{},
     .minimum_zig_version = "0.12.0",
     .paths = .{
         "build.zig",
