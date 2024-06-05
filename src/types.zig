@@ -446,6 +446,11 @@ pub const RawBson = union(enum) {
         return .{ .object_id = ObjectId.fromBytes(bytes) };
     }
 
+    /// convenience method for creating a new RawBson object id
+    pub fn objectIdHex(encoded: []const u8) !@This() {
+        return .{ .object_id = try ObjectId.fromHex(encoded) };
+    }
+
     /// convenience method for creating a new RawBson datetime
     pub fn datetime(millis: i64) @This() {
         return .{ .datetime = Datetime.fromMillis(millis) };

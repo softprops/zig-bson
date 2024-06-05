@@ -156,6 +156,7 @@ test Writer {
             ) },
             .{ "f", RawBson.datetime(0) },
             .{ "g", RawBson.double(1.23) },
+            .{ "h", try RawBson.objectIdHex("56e1fc72e0c917e9c4714161") },
         },
     );
     try bsonWriter.write(doc);
