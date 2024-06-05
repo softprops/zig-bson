@@ -17,7 +17,7 @@ See examples directory
 
 ## 📼 installing
 
-Create a new exec project with `zig init-exe`. Copy the echo handler example above into `src/main.zig`
+Create a new exec project with `zig init`. Copy an example from the examples directory into your into `src/main.zig`
 
 Create a `build.zig.zon` file to declare a dependency
 
