@@ -22,8 +22,9 @@ pub fn Writer(comptime T: type) type {
 
         pub fn write(self: *@This(), bson: RawBson) !void {
             switch (bson) {
-                .double => |_| {
-                    // try self.writer.writer().writeInt(f64, v.value, .little);
+                .double => |v| {
+                    const bytes: [8]u8 = @bitCast(v.value);
+                    try self.writer.writer().writeAll(&bytes);
                 },
                 .string => |v| try self.writeString(v),
                 .document => |v| {
@@ -154,6 +155,7 @@ test Writer {
                 },
             ) },
             .{ "f", RawBson.datetime(0) },
+            .{ "g", RawBson.double(1.23) },
         },
     );
     try bsonWriter.write(doc);
