@@ -532,13 +532,14 @@ pub const RawBson = union(enum) {
                             break :blk RawBson.string(data);
                         }
                         var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
-                        for (@field(data, data)) |
+                        for (data) |
                             elem,
                         | {
                             try elements.append((try from(owned.arena.allocator(), elem)).value);
                         }
                         break :blk RawBson.array(try elements.toOwnedSlice());
                     },
+                    .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
                         unreachable;
@@ -625,7 +626,7 @@ test "RawBson.from" {
         .person = .{
             .age = 32,
             .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
-            .ary = [_]i32{ 1, 2, 3 },
+            .ary = &[_]i32{ 1, 2, 3 },
         },
     });
     defer doc.deinit();
