@@ -470,6 +470,64 @@ pub const RawBson = union(enum) {
         return .{ .binary = Binary.init(bytes, st) };
     }
 
+    fn Owned(comptime T: type) type {
+        return struct {
+            value: T,
+            arena: *std.heap.ArenaAllocator,
+            fn deinit(self: *@This()) void {
+                const alloc = self.arena.child_allocator;
+                self.arena.deinit();
+                alloc.destroy(self.arena);
+            }
+        };
+    }
+
+    pub fn from(allocator: std.mem.Allocator, data: anytype) !Owned(@This()) {
+        var owned = Owned(@This()){
+            .arena = try allocator.create(std.heap.ArenaAllocator),
+            .value = undefined,
+        };
+        owned.arena.* = std.heap.ArenaAllocator.init(allocator);
+        const info = @typeInfo(@TypeOf(data));
+        //std.debug.print("resolving info {any} for type\n", .{info});
+        owned.value = switch (info) {
+            .Struct => |v| blk: {
+                var fields = try owned.arena.allocator().alloc(Document.Element, v.fields.len);
+                inline for (v.fields, 0..) |field, i| {
+                    // pass along this arena's allocator
+                    fields[i] = .{ field.name, (try from(owned.arena.allocator(), @field(data, field.name))).value };
+                }
+                break :blk RawBson.document(fields);
+            },
+            .ComptimeInt => RawBson.int32(data),
+            .Int => |v| blk: {
+                switch (v.bits) {
+                    32 => break :blk RawBson.int32(data),
+                    64 => break :blk RawBson.int64(data),
+                }
+            },
+            .Pointer => |v| blk: {
+                switch (v.size) {
+                    .Slice => {
+                        if (v.child == u8) {
+                            break :blk RawBson.string(data);
+                        }
+                    },
+                    else => |otherwise| {
+                        std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
+                        unreachable;
+                    },
+                }
+            },
+            // todo: many other types...
+            else => |otherwise| {
+                std.debug.print("{any} types not yet supported\n", .{otherwise});
+                unreachable;
+            },
+        };
+        return owned;
+    }
+
     pub fn toType(self: @This()) Type {
         return switch (self) {
             .double => .double,
@@ -535,6 +593,15 @@ pub const RawBson = union(enum) {
     }
 };
 
+test "RawBson.from" {
+    const allocator = std.testing.allocator;
+    var doc = try RawBson.from(allocator, .{ .age = 32 });
+    defer doc.deinit();
+    //const actual = try std.json.stringifyAlloc(allocator, doc, .{});
+    //defer allocator.free(actual);
+    std.debug.print("doc {?any}", .{doc.value.document.get("age")});
+}
+
 test "RawBson.jsonStringify" {
     const allocator = std.testing.allocator;
     const actual = try std.json.stringifyAlloc(allocator, RawBson{
@@ -598,7 +665,7 @@ pub const Type = enum(i8) {
 
 pub const SubType = enum(u8) {
     /// This is the most commonly used binary subtype and should be the 'default' for drivers and tools.
-    binary = 0x00,
+    binary = 0x00, // todo: rename to generic
     function = 0x01,
     binary_old = 0x02,
     uuid_old = 0x03,
