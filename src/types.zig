@@ -507,6 +507,7 @@ pub const RawBson = union(enum) {
                 }
                 break :blk RawBson.document(fields);
             },
+            .Bool => RawBson.boolean(data),
             .ComptimeInt => RawBson.int32(data),
             .Int => |v| blk: {
                 switch (v.bits) {
@@ -625,13 +626,13 @@ test "RawBson.from" {
     const allocator = std.testing.allocator;
     var doc = try RawBson.from(allocator, .{
         .person = .{
-            .age = 32,
             .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
             .comp_int = 1,
             .i32 = @as(i32, 2),
             .i64 = @as(i64, 3),
             .ary = [_]i32{ 4, 5, 6 },
             .slice = &[_]i32{ 1, 2, 3 },
+            .bool = true,
         },
     });
     defer doc.deinit();
