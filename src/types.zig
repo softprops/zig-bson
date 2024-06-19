@@ -630,9 +630,9 @@ test "RawBson.from" {
         },
     });
     defer doc.deinit();
-    //const actual = try std.json.stringifyAlloc(allocator, doc, .{});
-    //defer allocator.free(actual);
-    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("ary").?.array});
+    const actual = try std.json.stringifyAlloc(allocator, doc.value, .{});
+    defer allocator.free(actual);
+    std.debug.print("doc {s}", .{actual});
 }
 
 test "RawBson.jsonStringify" {
