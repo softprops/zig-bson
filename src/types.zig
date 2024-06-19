@@ -595,11 +595,11 @@ pub const RawBson = union(enum) {
 
 test "RawBson.from" {
     const allocator = std.testing.allocator;
-    var doc = try RawBson.from(allocator, .{ .age = 32 });
+    var doc = try RawBson.from(allocator, .{ .person = .{ .age = 32 } });
     defer doc.deinit();
     //const actual = try std.json.stringifyAlloc(allocator, doc, .{});
     //defer allocator.free(actual);
-    std.debug.print("doc {?any}", .{doc.value.document.get("age")});
+    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("age")});
 }
 
 test "RawBson.jsonStringify" {
