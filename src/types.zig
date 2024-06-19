@@ -488,7 +488,15 @@ pub const RawBson = union(enum) {
             .value = undefined,
         };
         owned.arena.* = std.heap.ArenaAllocator.init(allocator);
-        const info = @typeInfo(@TypeOf(data));
+        const dataType = @TypeOf(data);
+
+        // if the provided value already is a raw bson type, simply return it
+        if (RawBson == dataType) {
+            owned.value = data;
+            return owned;
+        }
+
+        const info = @typeInfo(dataType);
         //std.debug.print("resolving info {any} for type\n", .{info});
         owned.value = switch (info) {
             .Struct => |v| blk: {
@@ -595,11 +603,11 @@ pub const RawBson = union(enum) {
 
 test "RawBson.from" {
     const allocator = std.testing.allocator;
-    var doc = try RawBson.from(allocator, .{ .person = .{ .age = 32 } });
+    var doc = try RawBson.from(allocator, .{ .person = .{ .age = 32, .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011") } });
     defer doc.deinit();
     //const actual = try std.json.stringifyAlloc(allocator, doc, .{});
     //defer allocator.free(actual);
-    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("age")});
+    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("id")});
 }
 
 test "RawBson.jsonStringify" {
