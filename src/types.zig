@@ -518,6 +518,7 @@ pub const RawBson = union(enum) {
                     },
                 }
             },
+            // .Float ...
             .Array => |v| blk: {
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
@@ -626,7 +627,11 @@ test "RawBson.from" {
         .person = .{
             .age = 32,
             .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
-            .ary = &[_]i32{ 1, 2, 3 },
+            .comp_int = 1,
+            .i32 = @as(i32, 2),
+            .i64 = @as(i64, 3),
+            .ary = [_]i32{ 4, 5, 6 },
+            .slice = &[_]i32{ 1, 2, 3 },
         },
     });
     defer doc.deinit();
