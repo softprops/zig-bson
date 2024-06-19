@@ -512,7 +512,18 @@ pub const RawBson = union(enum) {
                 switch (v.bits) {
                     32 => break :blk RawBson.int32(data),
                     64 => break :blk RawBson.int64(data),
+                    else => |otherwise| {
+                        std.debug.print("{d} width ints not yet supported\n", .{otherwise});
+                        unreachable;
+                    },
                 }
+            },
+            .Array => |v| blk: {
+                var elements = try owned.arena.allocator().alloc(RawBson, v.len);
+                for (data, 0..) |elem, i| {
+                    elements[i] = (try from(owned.arena.allocator(), elem)).value;
+                }
+                break :blk RawBson.array(elements);
             },
             .Pointer => |v| blk: {
                 switch (v.size) {
@@ -520,6 +531,13 @@ pub const RawBson = union(enum) {
                         if (v.child == u8) {
                             break :blk RawBson.string(data);
                         }
+                        var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
+                        for (@field(data, data)) |
+                            elem,
+                        | {
+                            try elements.append((try from(owned.arena.allocator(), elem)).value);
+                        }
+                        break :blk RawBson.array(try elements.toOwnedSlice());
                     },
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
@@ -603,11 +621,17 @@ pub const RawBson = union(enum) {
 
 test "RawBson.from" {
     const allocator = std.testing.allocator;
-    var doc = try RawBson.from(allocator, .{ .person = .{ .age = 32, .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011") } });
+    var doc = try RawBson.from(allocator, .{
+        .person = .{
+            .age = 32,
+            .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
+            .ary = [_]i32{ 1, 2, 3 },
+        },
+    });
     defer doc.deinit();
     //const actual = try std.json.stringifyAlloc(allocator, doc, .{});
     //defer allocator.free(actual);
-    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("id")});
+    std.debug.print("doc {?any}", .{doc.value.document.get("person").?.document.get("ary").?.array});
 }
 
 test "RawBson.jsonStringify" {
