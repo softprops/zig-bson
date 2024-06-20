@@ -584,6 +584,67 @@ pub const RawBson = union(enum) {
         return owned;
     }
 
+    pub fn into(self: @This(), allocator: std.mem.Allocator, comptime T: type) !Owned(T) {
+        var owned = Owned(T){
+            .arena = try allocator.create(std.heap.ArenaAllocator),
+            .value = undefined,
+        };
+        owned.arena.* = std.heap.ArenaAllocator.init(allocator);
+        // tidy up if an error happens below
+        errdefer {
+            owned.arena.deinit();
+            allocator.destroy(owned.arena);
+        }
+        owned.value = switch (@typeInfo(T)) {
+            .Struct => |v| blk: {
+                switch (self) {
+                    .document => |doc| {
+                        var parsed: T = undefined;
+                        inline for (v.fields) |field| {
+                            if (doc.get(field.name)) |value| {
+                                @field(parsed, field.name) = (try value.into(owned.arena.allocator(), field.type)).value;
+                            } else if (field.default_value) |default| {
+                                // todo: try default if exists
+                                @field(parsed, field.name) = default;
+                            } else {
+                                return error.UnresolvedValue;
+                            }
+                        }
+                        break :blk parsed;
+                    },
+                    else => {
+                        return error.UnsupportedType;
+                    },
+                }
+            },
+            .Pointer => |v| blk: {
+                switch (v.size) {
+                    .Slice => {
+                        if (v.child == u8) {
+                            switch (self) {
+                                .string => |s| break :blk s,
+                                else => {
+                                    return error.UnsupportedType;
+                                },
+                            }
+                        }
+                        return error.UnsupportedType;
+                    },
+                    // .One => break :blk (try from(owned.arena.allocator(), data.*, options)).value,
+                    else => |otherwise| {
+                        std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            else => |otherwise| {
+                std.debug.print("unsupported type {any}\n", .{otherwise});
+                return error.UnsupportedType;
+            },
+        };
+        return owned;
+    }
+
     pub fn toType(self: @This()) Type {
         return switch (self) {
             .double => .double,
@@ -649,6 +710,15 @@ pub const RawBson = union(enum) {
     }
 };
 
+test "RawBson.into" {
+    const allocator = std.testing.allocator;
+    var doc = RawBson.document(&.{
+        .{ "foo", RawBson.string("bar") },
+    });
+    var into = try doc.into(allocator, struct { foo: []const u8 });
+    defer into.deinit();
+    std.debug.print("into {s}\n", .{into.value.foo});
+}
 test "RawBson.from" {
     const allocator = std.testing.allocator;
     const Enum = enum {
