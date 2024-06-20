@@ -471,16 +471,28 @@ pub const RawBson = union(enum) {
         return .{ .binary = Binary.init(bytes, st) };
     }
 
-    /// Derives a RawBson type from native zig types.
+    // reserved for configurability
+    pub const FromOptions = struct {
+        // Should optional fields with null value be written?
+        // emit_null_optional_fields: bool = true,
+    };
+
+    /// Derives a RawBson type from native zig types. Typically callers pass in a struct
+    /// and get back a RawBson document.
     ///
     /// When provided those types embed a RawBson
     /// values, i.e `ObjectIds` they will be returned as is in the derived value
-    pub fn from(allocator: std.mem.Allocator, data: anytype) !Owned(@This()) {
+    pub fn from(allocator: std.mem.Allocator, data: anytype, options: FromOptions) !Owned(@This()) {
         var owned = Owned(@This()){
             .arena = try allocator.create(std.heap.ArenaAllocator),
             .value = undefined,
         };
         owned.arena.* = std.heap.ArenaAllocator.init(allocator);
+        // tidy up if an error happens below
+        errdefer {
+            owned.arena.deinit();
+            allocator.destroy(owned.arena);
+        }
         const dataType = @TypeOf(data);
 
         // if the provided value already is a raw bson type, simply return it
@@ -497,10 +509,17 @@ pub const RawBson = union(enum) {
                     // pass along this arena's allocator
                     fields[i] = .{
                         field.name,
-                        (try from(owned.arena.allocator(), @field(data, field.name))).value,
+                        (try from(owned.arena.allocator(), @field(data, field.name), options)).value,
                     };
                 }
                 break :blk RawBson.document(fields);
+            },
+            .Optional => blk: {
+                if (data) |d| {
+                    break :blk (try from(owned.arena.allocator(), d, options)).value;
+                } else {
+                    break :blk RawBson.null();
+                }
             },
             .Bool => RawBson.boolean(data),
             .ComptimeInt => RawBson.int32(data),
@@ -518,6 +537,8 @@ pub const RawBson = union(enum) {
                     },
                 }
             },
+            .Enum => RawBson.string(@tagName(data)),
+            .ComptimeFloat => RawBson.double(data),
             .Float => |v| blk: {
                 switch (v.bits) {
                     1...63 => break :blk RawBson.double(@floatCast(data)),
@@ -531,7 +552,7 @@ pub const RawBson = union(enum) {
             .Array => |v| blk: {
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
-                    elements[i] = (try from(owned.arena.allocator(), elem)).value;
+                    elements[i] = (try from(owned.arena.allocator(), elem, options)).value;
                 }
                 break :blk RawBson.array(elements);
             },
@@ -543,11 +564,11 @@ pub const RawBson = union(enum) {
                         }
                         var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
                         for (data) |elem| {
-                            try elements.append((try from(owned.arena.allocator(), elem)).value);
+                            try elements.append((try from(owned.arena.allocator(), elem, options)).value);
                         }
                         break :blk RawBson.array(try elements.toOwnedSlice());
                     },
-                    .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
+                    .One => break :blk (try from(owned.arena.allocator(), data.*, options)).value,
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
                         break :blk error.UnsupportedType;
@@ -615,24 +636,31 @@ pub const RawBson = union(enum) {
         };
     }
 
-    pub fn deinit(_: @This(), _: std.mem.Allocator) void {
-        // switch (self) {
-        //     .document => |v| {
-        //         // for (v.elements) |elem| {
-        //         //     elem.v.deinit(allocator);
-        //         // }
-        //         allocator.free(v.elements);
-        //     },
-        //     else => {},
-        // }
+    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        switch (self) {
+            .document => |v| {
+                // for (v.elements) |elem| {
+                //     elem.v.deinit(allocator);
+                // }
+                allocator.free(v.elements);
+            },
+            else => {},
+        }
     }
 };
 
 test "RawBson.from" {
     const allocator = std.testing.allocator;
+    const Enum = enum {
+        a,
+        b,
+        c,
+    };
+    const opt: ?[]const u8 = null;
     var doc = try RawBson.from(allocator, .{
         .person = .{
             .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
+            .opt = opt,
             .comp_int = 1,
             .i16 = @as(i16, 2),
             .i32 = @as(i32, 2),
@@ -640,10 +668,12 @@ test "RawBson.from" {
             .ary = [_]i32{ 4, 5, 6 },
             .slice = &[_]i32{ 1, 2, 3 },
             .bool = true,
+            .comp_float = 3.2,
             .float32 = @as(f32, 3.2),
             .float64 = @as(f64, 3.2),
+            .enu = Enum.a,
         },
-    });
+    }, .{});
     defer doc.deinit();
     const actual = try std.json.stringifyAlloc(allocator, doc.value, .{});
     defer allocator.free(actual);
