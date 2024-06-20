@@ -3,6 +3,7 @@
 //! using std.json, these implementation will go into effect
 //!
 const std = @import("std");
+const Owned = @import("root.zig").Owned;
 
 /// consists of 12 bytes
 ///
@@ -470,18 +471,10 @@ pub const RawBson = union(enum) {
         return .{ .binary = Binary.init(bytes, st) };
     }
 
-    fn Owned(comptime T: type) type {
-        return struct {
-            value: T,
-            arena: *std.heap.ArenaAllocator,
-            fn deinit(self: *@This()) void {
-                const alloc = self.arena.child_allocator;
-                self.arena.deinit();
-                alloc.destroy(self.arena);
-            }
-        };
-    }
-
+    /// Derives a RawBson type from native zig types.
+    ///
+    /// When provided those types embed a RawBson
+    /// values, i.e `ObjectIds` they will be returned as is in the derived value
     pub fn from(allocator: std.mem.Allocator, data: anytype) !Owned(@This()) {
         var owned = Owned(@This()){
             .arena = try allocator.create(std.heap.ArenaAllocator),
@@ -497,29 +490,44 @@ pub const RawBson = union(enum) {
         }
 
         const info = @typeInfo(dataType);
-        //std.debug.print("resolving info {any} for type\n", .{info});
         owned.value = switch (info) {
             .Struct => |v| blk: {
                 var fields = try owned.arena.allocator().alloc(Document.Element, v.fields.len);
                 inline for (v.fields, 0..) |field, i| {
                     // pass along this arena's allocator
-                    fields[i] = .{ field.name, (try from(owned.arena.allocator(), @field(data, field.name))).value };
+                    fields[i] = .{
+                        field.name,
+                        (try from(owned.arena.allocator(), @field(data, field.name))).value,
+                    };
                 }
                 break :blk RawBson.document(fields);
             },
             .Bool => RawBson.boolean(data),
             .ComptimeInt => RawBson.int32(data),
             .Int => |v| blk: {
+                if (v.signedness == .unsigned) {
+                    std.debug.print("unsigned integers not yet supported\n", .{});
+                    break :blk error.UnsupportedType;
+                }
                 switch (v.bits) {
-                    32 => break :blk RawBson.int32(data),
-                    64 => break :blk RawBson.int64(data),
+                    0...32 => break :blk RawBson.int32(@intCast(data)),
+                    33...64 => break :blk RawBson.int64(@intCast(data)),
                     else => |otherwise| {
                         std.debug.print("{d} width ints not yet supported\n", .{otherwise});
-                        unreachable;
+                        break :blk error.UnsupportedType;
                     },
                 }
             },
-            // .Float ...
+            .Float => |v| blk: {
+                switch (v.bits) {
+                    1...63 => break :blk RawBson.double(@floatCast(data)),
+                    64 => break :blk RawBson.double(data),
+                    else => |otherwise| {
+                        std.debug.print("{d} width floats not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
             .Array => |v| blk: {
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
@@ -534,9 +542,7 @@ pub const RawBson = union(enum) {
                             break :blk RawBson.string(data);
                         }
                         var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
-                        for (data) |
-                            elem,
-                        | {
+                        for (data) |elem| {
                             try elements.append((try from(owned.arena.allocator(), elem)).value);
                         }
                         break :blk RawBson.array(try elements.toOwnedSlice());
@@ -544,14 +550,14 @@ pub const RawBson = union(enum) {
                     .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
-                        unreachable;
+                        break :blk error.UnsupportedType;
                     },
                 }
             },
             // todo: many other types...
             else => |otherwise| {
                 std.debug.print("{any} types not yet supported\n", .{otherwise});
-                unreachable;
+                return error.UnsupportedType;
             },
         };
         return owned;
@@ -609,16 +615,16 @@ pub const RawBson = union(enum) {
         };
     }
 
-    pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        switch (self) {
-            .document => |v| {
-                // for (v.elements) |elem| {
-                //     elem.v.deinit(allocator);
-                // }
-                allocator.free(v.elements);
-            },
-            else => {},
-        }
+    pub fn deinit(_: @This(), _: std.mem.Allocator) void {
+        // switch (self) {
+        //     .document => |v| {
+        //         // for (v.elements) |elem| {
+        //         //     elem.v.deinit(allocator);
+        //         // }
+        //         allocator.free(v.elements);
+        //     },
+        //     else => {},
+        // }
     }
 };
 
@@ -628,11 +634,14 @@ test "RawBson.from" {
         .person = .{
             .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
             .comp_int = 1,
+            .i16 = @as(i16, 2),
             .i32 = @as(i32, 2),
             .i64 = @as(i64, 3),
             .ary = [_]i32{ 4, 5, 6 },
             .slice = &[_]i32{ 1, 2, 3 },
             .bool = true,
+            .float32 = @as(f32, 3.2),
+            .float64 = @as(f64, 3.2),
         },
     });
     defer doc.deinit();
