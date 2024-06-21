@@ -43,12 +43,7 @@ pub fn main() !void {
             if (v.get("hello")) |value| {
                 std.debug.print(
                     "deserialized hello '{s}'!",
-                    .{
-                        switch (value) {
-                            .string => |s| s,
-                            else => unreachable,
-                        },
-                    },
+                    .{value},
                 );
             }
         },

@@ -772,6 +772,17 @@ pub const RawBson = union(enum) {
         };
     }
 
+    pub fn format(
+        self: @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        var jw = std.json.writeStream(writer, .{});
+        defer jw.deinit();
+        try jw.write(self);
+    }
+
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         switch (self) {
             .document => |v| {
