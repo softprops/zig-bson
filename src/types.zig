@@ -848,9 +848,7 @@ test "RawBson.from" {
         },
     });
     defer doc.deinit();
-    const actual = try std.json.stringifyAlloc(allocator, doc.value, .{});
-    defer allocator.free(actual);
-    std.debug.print("doc {s}", .{actual});
+    std.debug.print("doc {s}", .{doc.value});
 }
 
 test "RawBson.jsonStringify" {
