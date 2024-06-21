@@ -471,18 +471,12 @@ pub const RawBson = union(enum) {
         return .{ .binary = Binary.init(bytes, st) };
     }
 
-    // reserved for configurability
-    pub const FromOptions = struct {
-        // Should optional fields with null value be written?
-        // emit_null_optional_fields: bool = true,
-    };
-
     /// Derives a RawBson type from native zig types. Typically callers pass in a struct
     /// and get back a RawBson document.
     ///
     /// When provided those types embed a RawBson
     /// values, i.e `ObjectIds` they will be returned as is in the derived value
-    pub fn from(allocator: std.mem.Allocator, data: anytype, options: FromOptions) !Owned(@This()) {
+    pub fn from(allocator: std.mem.Allocator, data: anytype) !Owned(@This()) {
         var owned = Owned(@This()){
             .arena = try allocator.create(std.heap.ArenaAllocator),
             .value = undefined,
@@ -509,19 +503,20 @@ pub const RawBson = union(enum) {
                     // pass along this arena's allocator
                     fields[i] = .{
                         field.name,
-                        (try from(owned.arena.allocator(), @field(data, field.name), options)).value,
+                        (try from(owned.arena.allocator(), @field(data, field.name))).value,
                     };
                 }
                 break :blk RawBson.document(fields);
             },
             .Optional => blk: {
                 if (data) |d| {
-                    break :blk (try from(owned.arena.allocator(), d, options)).value;
+                    break :blk (try from(owned.arena.allocator(), d)).value;
                 } else {
                     break :blk RawBson.null();
                 }
             },
             .Bool => RawBson.boolean(data),
+            .Enum => RawBson.string(@tagName(data)),
             .ComptimeInt => RawBson.int32(data),
             .Int => |v| blk: {
                 if (v.signedness == .unsigned) {
@@ -537,7 +532,6 @@ pub const RawBson = union(enum) {
                     },
                 }
             },
-            .Enum => RawBson.string(@tagName(data)),
             .ComptimeFloat => RawBson.double(data),
             .Float => |v| blk: {
                 switch (v.bits) {
@@ -552,7 +546,7 @@ pub const RawBson = union(enum) {
             .Array => |v| blk: {
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
-                    elements[i] = (try from(owned.arena.allocator(), elem, options)).value;
+                    elements[i] = (try from(owned.arena.allocator(), elem)).value;
                 }
                 break :blk RawBson.array(elements);
             },
@@ -564,11 +558,11 @@ pub const RawBson = union(enum) {
                         }
                         var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
                         for (data) |elem| {
-                            try elements.append((try from(owned.arena.allocator(), elem, options)).value);
+                            try elements.append((try from(owned.arena.allocator(), elem)).value);
                         }
                         break :blk RawBson.array(try elements.toOwnedSlice());
                     },
-                    .One => break :blk (try from(owned.arena.allocator(), data.*, options)).value,
+                    .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
                         break :blk error.UnsupportedType;
@@ -584,6 +578,14 @@ pub const RawBson = union(enum) {
         return owned;
     }
 
+    /// Derives a value of a requested type `T` from a RawBson value. Typically callers request in a struct
+    /// type
+    ///
+    /// When requesting a struct whose fields are not yet represented an IncompatibleBsonType is is returned.
+    ///
+    /// When requesting a struct whose fields are supported by the underlying RawBson value type doesn't align, an IncompatibleBsonType error is returned
+    ///
+    /// When a requested struct whose field value is not present in a RawBson document, struct field defaults are supported and recommended
     pub fn into(self: @This(), allocator: std.mem.Allocator, comptime T: type) !Owned(T) {
         var owned = Owned(T){
             .arena = try allocator.create(std.heap.ArenaAllocator),
@@ -604,16 +606,91 @@ pub const RawBson = union(enum) {
                             if (doc.get(field.name)) |value| {
                                 @field(parsed, field.name) = (try value.into(owned.arena.allocator(), field.type)).value;
                             } else if (field.default_value) |default| {
-                                // todo: try default if exists
-                                @field(parsed, field.name) = default;
+                                const dvalue_aligned: *align(field.alignment) const anyopaque = @alignCast(default);
+                                @field(parsed, field.name) = @as(*const field.type, @ptrCast(dvalue_aligned)).*;
+                            } else if (@typeInfo(field.type) == .Optional) {
+                                @field(parsed, field.name) = null;
                             } else {
                                 return error.UnresolvedValue;
                             }
                         }
                         break :blk parsed;
                     },
-                    else => {
-                        return error.UnsupportedType;
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Bool => blk: {
+                switch (self) {
+                    .boolean => |b| break :blk b,
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Enum => |v| blk: {
+                switch (self) {
+                    .string => |s| {
+                        inline for (v.fields, 0..) |field, i| {
+                            if (std.mem.eql(u8, field.name, s)) {
+                                break :blk @enumFromInt(i);
+                            }
+                        }
+                        return error.UnsupportedEnumVariant;
+                    },
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .ComptimeInt => blk: {
+                switch (self) {
+                    .int32 => |v| break :blk v.value,
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Int => |v| blk: {
+                if (v.signedness == .unsigned) {
+                    std.debug.print("unsigned integers not yet supported\n", .{});
+                    break :blk error.UnsupportedType;
+                }
+                switch (v.bits) {
+                    0...32 => {
+                        switch (self) {
+                            .int32 => |i| break :blk @intCast(i.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    33...64 => {
+                        switch (self) {
+                            .int64 => |i| break :blk @intCast(i.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    else => |otherwise| {
+                        std.debug.print("{d} width ints not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            .ComptimeFloat => blk: {
+                switch (self) {
+                    .double => |d| break :blk @floatCast(d.value),
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Float => |v| blk: {
+                switch (v.bits) {
+                    1...63 => {
+                        switch (self) {
+                            .double => |d| break :blk @floatCast(d.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    64 => {
+                        switch (self) {
+                            .double => |d| break :blk d.value,
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    else => |otherwise| {
+                        std.debug.print("{d} width floats not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
                     },
                 }
             },
@@ -623,9 +700,7 @@ pub const RawBson = union(enum) {
                         if (v.child == u8) {
                             switch (self) {
                                 .string => |s| break :blk s,
-                                else => {
-                                    return error.UnsupportedType;
-                                },
+                                else => return error.IncompatibleBsonType,
                             }
                         }
                         return error.UnsupportedType;
@@ -712,12 +787,29 @@ pub const RawBson = union(enum) {
 
 test "RawBson.into" {
     const allocator = std.testing.allocator;
+    const Enum = enum {
+        boom,
+        doom,
+    };
     var doc = RawBson.document(&.{
-        .{ "foo", RawBson.string("bar") },
+        .{ "str", RawBson.string("bar") },
+        .{ "enu", RawBson.string("boom") },
+        .{ "i32", RawBson.int32(1) },
+        .{ "i64", RawBson.int64(2) },
+        .{ "f64", RawBson.double(1.5) },
+        .{ "bool", RawBson.boolean(true) },
     });
-    var into = try doc.into(allocator, struct { foo: []const u8 });
+    var into = try doc.into(allocator, struct {
+        str: []const u8,
+        enu: Enum,
+        i32: i32,
+        i64: i64,
+        f64: f64,
+        bool: bool,
+        opt: ?bool,
+    });
     defer into.deinit();
-    std.debug.print("into {s}\n", .{into.value.foo});
+    std.debug.print("into {any}\n", .{into.value});
 }
 test "RawBson.from" {
     const allocator = std.testing.allocator;
@@ -743,7 +835,7 @@ test "RawBson.from" {
             .float64 = @as(f64, 3.2),
             .enu = Enum.a,
         },
-    }, .{});
+    });
     defer doc.deinit();
     const actual = try std.json.stringifyAlloc(allocator, doc.value, .{});
     defer allocator.free(actual);
