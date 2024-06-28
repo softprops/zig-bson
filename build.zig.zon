@@ -1,7 +1,13 @@
 .{
     .name = "bson",
     .version = "0.1.1",
-    .dependencies = .{},
+    .dependencies = .{
+        // todo: update this to a versioned tag when this package publishes one
+        .benchmark = .{
+            .url = "https://github.com/silversquirl/benchmark.zig/archive/refs/heads/main/main.tar.gz",
+            .hash = "1220287c22cfcf85f05d353084e12200c6a7dcb5f4511cb05103f5dbd709e50731a7",
+        },
+    },
     .minimum_zig_version = "0.13.0",
     .paths = .{
         "build.zig",

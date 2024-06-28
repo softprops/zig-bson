@@ -1,9 +1,10 @@
 const std = @import("std");
 const bson = @import("root.zig");
 
+const benchmark = @import("benchmark");
+
 // bench hello world comparison
 test "bench read" {
-    const benchmark = @import("benchmark.zig");
     try benchmark.main(.{}, struct {
         pub fn jsonRead(b: *benchmark.B) !void {
             // Setup is not timed
@@ -44,7 +45,6 @@ test "bench read" {
 }
 
 test "bench write" {
-    const benchmark = @import("benchmark.zig");
     try benchmark.main(.{}, struct {
         // Benchmarks are just public functions
         pub fn jsonWrite(b: *benchmark.B) !void {

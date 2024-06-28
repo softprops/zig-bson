@@ -27,6 +27,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .filters = &.{"bench"},
     });
+    const benchmark = b.dependency("benchmark", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("benchmark");
+    benchmark_tests.root_module.addImport("benchmark", benchmark);
 
     const run_benchmark_tests = b.addRunArtifact(benchmark_tests);
 
