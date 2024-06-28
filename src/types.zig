@@ -13,6 +13,13 @@ const std = @import("std");
 pub const ObjectId = struct {
     bytes: [12]u8,
 
+    /// Gets the timestamp (number of seconds since the Unix epoch).
+    pub fn timestamp(self: @This()) i32 {
+        return std.mem.readInt(i32, self.bytes[0..4], .little);
+    }
+
+    // todo add timestamp based generator fn
+
     pub fn fromBytes(bytes: [12]u8) @This() {
         return .{ .bytes = bytes };
     }
@@ -34,14 +41,16 @@ pub const ObjectId = struct {
 
 test ObjectId {
     const allocator = std.testing.allocator;
+    const objId = try ObjectId.fromHex("507f191e810c19729de860ea");
+    try std.testing.expectEqual(504987472, objId.timestamp());
     const json = try std.json.stringifyAlloc(
         allocator,
-        try ObjectId.fromHex("507f1f77bcf86cd799439011"),
+        objId,
         .{},
     );
     defer allocator.free(json);
     try std.testing.expectEqualStrings(
-        \\{"$oid":"507f1f77bcf86cd799439011"}
+        \\{"$oid":"507f191e810c19729de860ea"}
     , json);
 }
 
