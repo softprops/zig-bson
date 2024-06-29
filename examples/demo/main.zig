@@ -37,8 +37,9 @@ pub fn main() !void {
     // read it back
     var fbs = std.io.fixedBufferStream(bytes);
     var reader = bson.reader(allocator, fbs.reader());
-    defer reader.deinit();
-    switch (try reader.read()) {
+    var rawBson = try reader.read();
+    defer rawBson.deinit();
+    switch (rawBson.value) {
         .document => |v| {
             if (v.get("hello")) |value| {
                 std.debug.print(
