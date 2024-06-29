@@ -124,14 +124,15 @@ test "bson specs" {
                     allocator,
                     stream.reader(),
                 );
-                defer bsonReader.deinit();
+                //defer bsonReader.deinit();
 
                 if (suite.test_key) |_| {
-                    const rawBson = try bsonReader.read();
+                    var rawBson = try bsonReader.read();
+                    defer rawBson.deinit();
 
                     const actual = try std.json.stringifyAlloc(
                         allocator,
-                        rawBson,
+                        rawBson.value,
                         .{},
                     );
                     defer allocator.free(actual);
