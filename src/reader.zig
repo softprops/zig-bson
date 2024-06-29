@@ -3,7 +3,7 @@ const types = @import("types.zig");
 const RawBson = types.RawBson;
 
 /// A Reader deserializes BSON bytes from a provided Reader type
-/// into a RawBson type, typically a RawBson.document with embedded BSON types,  following the [BSON spec](https://bsonspec.org/spec.html)
+/// into a RawBson type, typically a RawBson.document with embedded BSON types, following the [BSON spec](https://bsonspec.org/spec.html)
 pub fn Reader(comptime T: type) type {
     return struct {
         reader: std.io.CountingReader(T),
@@ -153,7 +153,11 @@ pub fn Reader(comptime T: type) type {
         }
 
         inline fn readCStr(self: *@This()) ![]u8 {
-            return (try self.reader.reader().readUntilDelimiterAlloc(self.arena.allocator(), 0, std.math.maxInt(usize)));
+            return (try self.reader.reader().readUntilDelimiterAlloc(
+                self.arena.allocator(),
+                0,
+                std.math.maxInt(usize),
+            ));
         }
 
         inline fn readStr(self: *@This()) ![]u8 {
@@ -189,7 +193,7 @@ pub fn Reader(comptime T: type) type {
 }
 
 /// Creates a new BSON reader to deserialize documents from bytes provided by an underlying reader
-/// Callers should call `deinit()` on after using the writer
+/// Callers should call `deinit()` on after using the reader
 pub fn reader(allocator: std.mem.Allocator, underlying: anytype) Reader(@TypeOf(underlying)) {
     return Reader(@TypeOf(underlying)).init(allocator, underlying);
 }

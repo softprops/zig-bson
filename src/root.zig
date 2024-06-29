@@ -9,6 +9,20 @@ pub const reader = @import("reader.zig").reader;
 pub const writer = @import("writer.zig").writer;
 pub const types = @import("types.zig");
 
+/// A container for a value and its deferable deinitialization
+pub fn Owned(comptime T: type) type {
+    return struct {
+        value: T,
+        arena: *std.heap.ArenaAllocator,
+        /// call this to deinitialize value after use
+        pub fn deinit(self: *@This()) void {
+            const alloc = self.arena.child_allocator;
+            self.arena.deinit();
+            alloc.destroy(self.arena);
+        }
+    };
+}
+
 test {
     std.testing.refAllDecls(@This());
 }

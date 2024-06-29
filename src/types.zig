@@ -3,10 +3,12 @@
 //! using std.json, these implementation will go into effect
 //!
 const std = @import("std");
+const Owned = @import("root.zig").Owned;
 
-/// consists of 12 bytes
+/// represents a unique identifier.
 ///
-/// * A 4-byte timestamp, representing the ObjectId's creation, measured in seconds since the Unix epoch
+/// consists of 12 bytes
+/// * A 4-byte timestamp, representing the ObjectId's creation, measured in seconds since the Unix epoch, accessible via the `timestamp()` method
 /// * A 5-byte random value generated once per process. This random value is unique to the machine and process.
 /// * A 3-byte incrementing counter, initialized to a random value.
 /// https://www.mongodb.com/docs/manual/reference/bson-types/#objectid
@@ -24,6 +26,7 @@ pub const ObjectId = struct {
         return .{ .bytes = bytes };
     }
 
+    /// this may return an error if encoded is not actually hex formatted
     pub fn fromHex(encoded: []const u8) !@This() {
         var bytes: [12]u8 = undefined;
         _ = try std.fmt.hexToBytes(&bytes, encoded);
@@ -460,7 +463,7 @@ pub const RawBson = union(enum) {
         return .{ .object_id = try ObjectId.fromHex(encoded) };
     }
 
-    /// convenience method for creating a new RawBson datetime
+    /// convenience method for creating a new RawBson datetime from millis since the epoch
     pub fn datetime(millis: i64) @This() {
         return .{ .datetime = Datetime.fromMillis(millis) };
     }
@@ -468,6 +471,345 @@ pub const RawBson = union(enum) {
     /// convenience method for creating a new RawBson binary
     pub fn binary(bytes: []const u8, st: SubType) @This() {
         return .{ .binary = Binary.init(bytes, st) };
+    }
+
+    /// Derives a RawBson type from native zig types. Typically callers pass in a struct
+    /// and get back a RawBson document.
+    ///
+    /// When provided those types embed a RawBson
+    /// values, i.e `ObjectIds` they will be returned as is in the derived value
+    pub fn from(allocator: std.mem.Allocator, data: anytype) !Owned(@This()) {
+        var owned = Owned(@This()){
+            .arena = try allocator.create(std.heap.ArenaAllocator),
+            .value = undefined,
+        };
+        owned.arena.* = std.heap.ArenaAllocator.init(allocator);
+        // tidy up if an error happens below
+        errdefer {
+            owned.arena.deinit();
+            allocator.destroy(owned.arena);
+        }
+        const dataType = @TypeOf(data);
+
+        // if the provided value already is a raw bson or similar native bson type defined above, simply return it
+        switch (dataType) {
+            RawBson => {
+                owned.value = data;
+                return owned;
+            },
+            Document => {
+                owned.value = RawBson{ .document = data };
+                return owned;
+            },
+            Regex => {
+                owned.value = RawBson{ .regex = data };
+                return owned;
+            },
+            Decimal128 => {
+                owned.value = RawBson{ .decimal128 = data };
+                return owned;
+            },
+            Timestamp => {
+                owned.value = RawBson{ .timestamp = data };
+                return owned;
+            },
+            Binary => {
+                owned.value = RawBson{ .binary = data };
+                return owned;
+            },
+            ObjectId => {
+                owned.value = RawBson{ .object_id = data };
+                return owned;
+            },
+            Datetime => {
+                owned.value = RawBson{ .datetime = data };
+                return owned;
+            },
+            else => {},
+        }
+
+        const info = @typeInfo(dataType);
+        owned.value = switch (info) {
+            .Struct => |v| blk: {
+                var fields = try owned.arena.allocator().alloc(Document.Element, v.fields.len);
+                inline for (v.fields, 0..) |field, i| {
+                    // pass along this arena's allocator
+                    fields[i] = .{
+                        field.name,
+                        (try from(owned.arena.allocator(), @field(data, field.name))).value,
+                    };
+                }
+                break :blk RawBson.document(fields);
+            },
+            .Optional => blk: {
+                if (data) |d| {
+                    break :blk (try from(owned.arena.allocator(), d)).value;
+                } else {
+                    break :blk RawBson.null();
+                }
+            },
+            .Bool => RawBson.boolean(data),
+            .Enum => RawBson.string(@tagName(data)),
+            .ComptimeInt => RawBson.int32(data),
+            .Int => |v| blk: {
+                if (v.signedness == .unsigned) {
+                    std.debug.print("unsigned integers not yet supported\n", .{});
+                    break :blk error.UnsupportedType;
+                }
+                switch (v.bits) {
+                    0...32 => break :blk RawBson.int32(@intCast(data)),
+                    33...64 => break :blk RawBson.int64(@intCast(data)),
+                    else => |otherwise| {
+                        std.debug.print("{d} width ints not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            .ComptimeFloat => RawBson.double(data),
+            .Float => |v| blk: {
+                switch (v.bits) {
+                    1...63 => break :blk RawBson.double(@floatCast(data)),
+                    64 => break :blk RawBson.double(data),
+                    else => |otherwise| {
+                        std.debug.print("{d} width floats not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            .Array => |v| blk: {
+                var elements = try owned.arena.allocator().alloc(RawBson, v.len);
+                for (data, 0..) |elem, i| {
+                    elements[i] = (try from(owned.arena.allocator(), elem)).value;
+                }
+                break :blk RawBson.array(elements);
+            },
+            .Pointer => |v| blk: {
+                switch (v.size) {
+                    .Slice => {
+                        if (v.child == u8) {
+                            break :blk RawBson.string(data);
+                        }
+                        var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
+                        for (data) |elem| {
+                            try elements.append((try from(owned.arena.allocator(), elem)).value);
+                        }
+                        break :blk RawBson.array(try elements.toOwnedSlice());
+                    },
+                    .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
+                    else => |otherwise| {
+                        std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            // todo: many other types...
+            else => |otherwise| {
+                std.debug.print("{any} types not yet supported\n", .{otherwise});
+                return error.UnsupportedType;
+            },
+        };
+        return owned;
+    }
+
+    /// Derives a value of a requested type `T` from a RawBson value. Typically callers request in a struct
+    /// type
+    ///
+    /// When requesting a struct whose fields are not yet represented an IncompatibleBsonType is is returned.
+    ///
+    /// When requesting a struct whose fields are supported by the underlying RawBson value type doesn't align, an IncompatibleBsonType error is returned
+    ///
+    /// When a requested struct whose field value is not present in a RawBson document, struct field defaults are supported and recommended
+    pub fn into(self: @This(), allocator: std.mem.Allocator, comptime T: type) !Owned(T) {
+        var owned = Owned(T){
+            .arena = try allocator.create(std.heap.ArenaAllocator),
+            .value = undefined,
+        };
+        owned.arena.* = std.heap.ArenaAllocator.init(allocator);
+        // tidy up if an error happens below
+        errdefer {
+            owned.arena.deinit();
+            allocator.destroy(owned.arena);
+        }
+
+        // if the provided value already is a raw bson or similar native bson type defined above, simply return it
+        switch (T) {
+            RawBson => {
+                owned.value = self;
+                return owned;
+            },
+            Document => switch (self) {
+                .document => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Regex => switch (self) {
+                .regex => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Decimal128 => switch (self) {
+                .decimal128 => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Timestamp => switch (self) {
+                .timestamp => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Binary => switch (self) {
+                .binary => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            ObjectId => switch (self) {
+                .object_id => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Datetime => switch (self) {
+                .datetime => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            else => {},
+        }
+
+        owned.value = switch (@typeInfo(T)) {
+            .Struct => |v| blk: {
+                switch (self) {
+                    .document => |doc| {
+                        var parsed: T = undefined;
+                        inline for (v.fields) |field| {
+                            if (doc.get(field.name)) |value| {
+                                @field(parsed, field.name) = (try value.into(owned.arena.allocator(), field.type)).value;
+                            } else if (field.default_value) |default| {
+                                const dvalue_aligned: *align(field.alignment) const anyopaque = @alignCast(default);
+                                @field(parsed, field.name) = @as(*const field.type, @ptrCast(dvalue_aligned)).*;
+                            } else if (@typeInfo(field.type) == .Optional) {
+                                @field(parsed, field.name) = null;
+                            } else {
+                                return error.UnresolvedValue;
+                            }
+                        }
+                        break :blk parsed;
+                    },
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Bool => blk: {
+                switch (self) {
+                    .boolean => |b| break :blk b,
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Enum => |v| blk: {
+                switch (self) {
+                    .string => |s| {
+                        inline for (v.fields, 0..) |field, i| {
+                            if (std.mem.eql(u8, field.name, s)) {
+                                break :blk @enumFromInt(i);
+                            }
+                        }
+                        return error.UnsupportedEnumVariant;
+                    },
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .ComptimeInt => blk: {
+                switch (self) {
+                    .int32 => |v| break :blk v.value,
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Int => |v| blk: {
+                if (v.signedness == .unsigned) {
+                    std.debug.print("unsigned integers not yet supported\n", .{});
+                    break :blk error.UnsupportedType;
+                }
+                switch (v.bits) {
+                    0...32 => {
+                        switch (self) {
+                            .int32 => |i| break :blk @intCast(i.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    33...64 => {
+                        switch (self) {
+                            .int64 => |i| break :blk @intCast(i.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    else => |otherwise| {
+                        std.debug.print("{d} width ints not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            .ComptimeFloat => blk: {
+                switch (self) {
+                    .double => |d| break :blk @floatCast(d.value),
+                    else => return error.IncompatibleBsonType,
+                }
+            },
+            .Float => |v| blk: {
+                switch (v.bits) {
+                    1...63 => {
+                        switch (self) {
+                            .double => |d| break :blk @floatCast(d.value),
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    64 => {
+                        switch (self) {
+                            .double => |d| break :blk d.value,
+                            else => return error.IncompatibleBsonType,
+                        }
+                    },
+                    else => |otherwise| {
+                        std.debug.print("{d} width floats not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            .Pointer => |v| blk: {
+                switch (v.size) {
+                    .Slice => {
+                        if (v.child == u8) {
+                            switch (self) {
+                                .string => |s| break :blk s,
+                                else => return error.IncompatibleBsonType,
+                            }
+                        }
+                        return error.UnsupportedType;
+                    },
+                    // .One => break :blk (try from(owned.arena.allocator(), data.*, options)).value,
+                    else => |otherwise| {
+                        std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
+                        break :blk error.UnsupportedType;
+                    },
+                }
+            },
+            else => |otherwise| {
+                std.debug.print("unsupported type {any}\n", .{otherwise});
+                return error.UnsupportedType;
+            },
+        };
+        return owned;
     }
 
     pub fn toType(self: @This()) Type {
@@ -522,6 +864,17 @@ pub const RawBson = union(enum) {
         };
     }
 
+    pub fn format(
+        self: @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        var jw = std.json.writeStream(writer, .{});
+        defer jw.deinit();
+        try jw.write(self);
+    }
+
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         switch (self) {
             .document => |v| {
@@ -534,6 +887,63 @@ pub const RawBson = union(enum) {
         }
     }
 };
+
+test "RawBson.into" {
+    const allocator = std.testing.allocator;
+    const Enum = enum {
+        boom,
+        doom,
+    };
+    var doc = RawBson.document(&.{
+        .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
+        .{ "str", RawBson.string("bar") },
+        .{ "enu", RawBson.string("boom") },
+        .{ "i32", RawBson.int32(1) },
+        .{ "i64", RawBson.int64(2) },
+        .{ "f64", RawBson.double(1.5) },
+        .{ "bool", RawBson.boolean(true) },
+    });
+    var into = try doc.into(allocator, struct {
+        id: ObjectId,
+        str: []const u8,
+        enu: Enum,
+        i32: i32,
+        i64: i64,
+        f64: f64,
+        bool: bool,
+        opt: ?bool,
+    });
+    defer into.deinit();
+    std.debug.print("into {any}\n", .{into.value});
+}
+test "RawBson.from" {
+    const allocator = std.testing.allocator;
+    const Enum = enum {
+        a,
+        b,
+        c,
+    };
+    const opt: ?[]const u8 = null;
+    var doc = try RawBson.from(allocator, .{
+        .person = .{
+            .id = try ObjectId.fromHex("507f1f77bcf86cd799439011"),
+            .opt = opt,
+            .comp_int = 1,
+            .i16 = @as(i16, 2),
+            .i32 = @as(i32, 2),
+            .i64 = @as(i64, 3),
+            .ary = [_]i32{ 4, 5, 6 },
+            .slice = &[_]i32{ 1, 2, 3 },
+            .bool = true,
+            .comp_float = 3.2,
+            .float32 = @as(f32, 3.2),
+            .float64 = @as(f64, 3.2),
+            .enu = Enum.a,
+        },
+    });
+    defer doc.deinit();
+    std.debug.print("doc {s}", .{doc.value});
+}
 
 test "RawBson.jsonStringify" {
     const allocator = std.testing.allocator;
@@ -598,7 +1008,7 @@ pub const Type = enum(i8) {
 
 pub const SubType = enum(u8) {
     /// This is the most commonly used binary subtype and should be the 'default' for drivers and tools.
-    binary = 0x00,
+    binary = 0x00, // todo: rename to generic
     function = 0x01,
     binary_old = 0x02,
     uuid_old = 0x03,
