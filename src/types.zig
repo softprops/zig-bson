@@ -5,9 +5,10 @@
 const std = @import("std");
 const Owned = @import("root.zig").Owned;
 
-/// consists of 12 bytes
+/// represents a unique identifier.
 ///
-/// * A 4-byte timestamp, representing the ObjectId's creation, measured in seconds since the Unix epoch
+/// consists of 12 bytes
+/// * A 4-byte timestamp, representing the ObjectId's creation, measured in seconds since the Unix epoch, accessible via the `timestamp()` method
 /// * A 5-byte random value generated once per process. This random value is unique to the machine and process.
 /// * A 3-byte incrementing counter, initialized to a random value.
 /// https://www.mongodb.com/docs/manual/reference/bson-types/#objectid
@@ -25,6 +26,7 @@ pub const ObjectId = struct {
         return .{ .bytes = bytes };
     }
 
+    /// this may return an error if encoded is not actually hex formatted
     pub fn fromHex(encoded: []const u8) !@This() {
         var bytes: [12]u8 = undefined;
         _ = try std.fmt.hexToBytes(&bytes, encoded);
@@ -461,7 +463,7 @@ pub const RawBson = union(enum) {
         return .{ .object_id = try ObjectId.fromHex(encoded) };
     }
 
-    /// convenience method for creating a new RawBson datetime
+    /// convenience method for creating a new RawBson datetime from millis since the epoch
     pub fn datetime(millis: i64) @This() {
         return .{ .datetime = Datetime.fromMillis(millis) };
     }
@@ -489,10 +491,41 @@ pub const RawBson = union(enum) {
         }
         const dataType = @TypeOf(data);
 
-        // if the provided value already is a raw bson type, simply return it
-        if (RawBson == dataType) {
-            owned.value = data;
-            return owned;
+        // if the provided value already is a raw bson or similar native bson type defined above, simply return it
+        switch (dataType) {
+            RawBson => {
+                owned.value = data;
+                return owned;
+            },
+            Document => {
+                owned.value = RawBson{ .document = data };
+                return owned;
+            },
+            Regex => {
+                owned.value = RawBson{ .regex = data };
+                return owned;
+            },
+            Decimal128 => {
+                owned.value = RawBson{ .decimal128 = data };
+                return owned;
+            },
+            Timestamp => {
+                owned.value = RawBson{ .timestamp = data };
+                return owned;
+            },
+            Binary => {
+                owned.value = RawBson{ .binary = data };
+                return owned;
+            },
+            ObjectId => {
+                owned.value = RawBson{ .object_id = data };
+                return owned;
+            },
+            Datetime => {
+                owned.value = RawBson{ .datetime = data };
+                return owned;
+            },
+            else => {},
         }
 
         const info = @typeInfo(dataType);
@@ -597,6 +630,65 @@ pub const RawBson = union(enum) {
             owned.arena.deinit();
             allocator.destroy(owned.arena);
         }
+
+        // if the provided value already is a raw bson or similar native bson type defined above, simply return it
+        switch (T) {
+            RawBson => {
+                owned.value = self;
+                return owned;
+            },
+            Document => switch (self) {
+                .document => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Regex => switch (self) {
+                .regex => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Decimal128 => switch (self) {
+                .decimal128 => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Timestamp => switch (self) {
+                .timestamp => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Binary => switch (self) {
+                .binary => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            ObjectId => switch (self) {
+                .object_id => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            Datetime => switch (self) {
+                .datetime => |v| {
+                    owned.value = v;
+                    return owned;
+                },
+                else => return error.IncompatibleBsonType,
+            },
+            else => {},
+        }
+
         owned.value = switch (@typeInfo(T)) {
             .Struct => |v| blk: {
                 switch (self) {
@@ -803,6 +895,7 @@ test "RawBson.into" {
         doom,
     };
     var doc = RawBson.document(&.{
+        .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
         .{ "str", RawBson.string("bar") },
         .{ "enu", RawBson.string("boom") },
         .{ "i32", RawBson.int32(1) },
@@ -811,6 +904,7 @@ test "RawBson.into" {
         .{ "bool", RawBson.boolean(true) },
     });
     var into = try doc.into(allocator, struct {
+        id: ObjectId,
         str: []const u8,
         enu: Enum,
         i32: i32,
@@ -832,7 +926,7 @@ test "RawBson.from" {
     const opt: ?[]const u8 = null;
     var doc = try RawBson.from(allocator, .{
         .person = .{
-            .id = try RawBson.objectIdHex("507f1f77bcf86cd799439011"),
+            .id = try ObjectId.fromHex("507f1f77bcf86cd799439011"),
             .opt = opt,
             .comp_int = 1,
             .i16 = @as(i16, 2),
