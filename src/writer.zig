@@ -15,7 +15,7 @@ pub fn Writer(comptime T: type) type {
             };
         }
 
-        /// callers sure ensure this is called to free an allocated memory
+        /// callers should ensure this is called to free an allocated memory
         pub fn deinit(self: *@This()) void {
             self.arena.deinit();
         }
@@ -165,10 +165,11 @@ test Writer {
     const stream = fbs.reader();
 
     var bsonReader = reader(allocator, stream);
-    defer bsonReader.deinit();
+    var rawBson = try bsonReader.read();
+    defer rawBson.deinit();
     const actual = try std.json.stringifyAlloc(
         allocator,
-        try bsonReader.read(),
+        rawBson.value,
         .{},
     );
     defer allocator.free(actual);

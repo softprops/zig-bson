@@ -1,61 +1,70 @@
 const std = @import("std");
 const types = @import("types.zig");
 const RawBson = types.RawBson;
+const Owned = @import("root.zig").Owned;
 
 /// A Reader deserializes BSON bytes from a provided Reader type
 /// into a RawBson type, typically a RawBson.document with embedded BSON types, following the [BSON spec](https://bsonspec.org/spec.html)
 pub fn Reader(comptime T: type) type {
     return struct {
         reader: std.io.CountingReader(T),
-        arena: std.heap.ArenaAllocator,
+        allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator, rdr: T) @This() {
             return .{
                 .reader = std.io.countingReader(rdr),
-                .arena = std.heap.ArenaAllocator.init(allocator),
+                // todo: only store provided allocator
+                .allocator = allocator,
             };
         }
 
         /// create a new Reader starting where this reader left off, sharing allocation states so that it only needs
         /// freed once
-        fn fork(self: *@This()) @This() {
-            return init(self.arena.allocator(), self.reader.child_reader);
+        fn fork(self: *@This(), allocator: std.mem.Allocator) @This() {
+            return init(allocator, self.reader.child_reader);
         }
 
-        /// callers sure ensure this is called to free an allocated memory
-        pub fn deinit(self: *@This()) void {
-            self.arena.deinit();
-        }
+        /// reads a data into a Owned RawBson type. callers are responsible for freeing memory by calling .deinit()
+        pub fn read(self: *@This()) !Owned(RawBson) {
+            var owned = Owned(RawBson){
+                .arena = try self.allocator.create(std.heap.ArenaAllocator),
+                .value = undefined,
+            };
+            owned.arena.* = std.heap.ArenaAllocator.init(self.allocator);
+            // tidy up if an error happens below
+            errdefer {
+                owned.arena.deinit();
+                self.allocator.destroy(owned.arena);
+            }
 
-        pub fn read(self: *@This()) !RawBson {
             const len = try self.readI32();
-            var elements = std.ArrayList(types.Document.Element).init(self.arena.allocator());
+            var elements = std.ArrayList(types.Document.Element).init(owned.arena.allocator());
             defer elements.deinit();
             std.log.debug("reading doc of len {d} curr count {d}", .{ len, self.reader.bytes_read });
 
             while (self.reader.bytes_read < len - 1) {
                 const tpe = types.Type.fromInt(try self.readI8());
-                const name = try self.readCStr();
+                const name = try self.readCStr(owned.arena.allocator());
                 const element = switch (tpe) {
                     .double => RawBson.double(try self.readF64()),
-                    .string => RawBson.string(try self.readStr()),
+                    .string => RawBson.string(try self.readStr(owned.arena.allocator())),
                     .document => blk: {
-                        var child = self.fork();
-                        const raw = try child.read();
+                        var child = self.fork(owned.arena.allocator());
+                        const raw = (try child.read()).value;
                         // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
                         break :blk raw;
                     },
                     .array => blk: {
                         std.log.debug("forking reader after byte # {d}\n", .{self.reader.bytes_read});
-                        var child = self.fork();
-                        const raw = try child.read();
+                        var child = self.fork(owned.arena.allocator());
+                        const raw = (try child.read()).value;
                         // update local read bytes
                         self.reader.bytes_read += child.reader.bytes_read;
                         switch (raw) {
                             .document => |doc| {
                                 // an array is just a document whose keys are array indexes. i.e { "0": "...", "1": "..." }
-                                var elems = try self.arena.allocator().alloc(RawBson, doc.elements.len);
+                                var elems = try owned.arena.allocator().alloc(RawBson, doc.elements.len);
                                 for (doc.elements, 0..) |elem, i| {
                                     elems[i] = elem.@"1";
                                 }
@@ -67,7 +76,7 @@ pub fn Reader(comptime T: type) type {
                     .binary => blk: {
                         const binLen = try self.readI32();
                         const st = types.SubType.fromInt(try self.readU8());
-                        const bytes = try self.arena.allocator().alloc(u8, @intCast(binLen));
+                        const bytes = try owned.arena.allocator().alloc(u8, @intCast(binLen));
                         _ = try self.reader.reader().readAll(bytes);
                         break :blk switch (st) {
                             .binary_old => old: {
@@ -76,7 +85,7 @@ pub fn Reader(comptime T: type) type {
                                 var fbs = std.io.fixedBufferStream(bytes);
                                 var innerReader = fbs.reader();
                                 const innerLen = try innerReader.readInt(i32, .little);
-                                const innerBytes = try self.arena.allocator().alloc(u8, @intCast(innerLen)); //try innerBuf.toOwnedSlice();
+                                const innerBytes = try owned.arena.allocator().alloc(u8, @intCast(innerLen)); //try innerBuf.toOwnedSlice();
                                 _ = try innerReader.readAll(innerBytes);
                                 break :old RawBson.binary(innerBytes, st);
                             },
@@ -92,9 +101,9 @@ pub fn Reader(comptime T: type) type {
                     .boolean => RawBson.boolean(try self.readI8() == 1),
                     .datetime => RawBson.datetime(try self.readI64()),
                     .null => RawBson.null(),
-                    .regex => RawBson.regex(try self.readCStr(), try self.readCStr()),
+                    .regex => RawBson.regex(try self.readCStr(owned.arena.allocator()), try self.readCStr(owned.arena.allocator())),
                     .dbpointer => blk: {
-                        const ref = try self.readStr();
+                        const ref = try self.readStr(owned.arena.allocator());
 
                         var id_bytes: [12]u8 = undefined;
                         _ = try self.reader.reader().readAll(&id_bytes);
@@ -103,19 +112,19 @@ pub fn Reader(comptime T: type) type {
                             .dbpointer = types.DBPointer.init(ref, types.ObjectId.fromBytes(id_bytes)),
                         };
                     },
-                    .javascript => RawBson.javaScript(try self.readStr()),
+                    .javascript => RawBson.javaScript(try self.readStr(owned.arena.allocator())),
                     .javascript_with_scope => blk: {
                         _ = try self.readI32();
-                        const code = try self.readStr();
-                        var child = self.fork();
-                        const raw = try child.read();
+                        const code = try self.readStr(owned.arena.allocator());
+                        var child = self.fork(owned.arena.allocator());
+                        const raw = (try child.read()).value;
                         self.reader.bytes_read += child.reader.bytes_read;
                         switch (raw) {
                             .document => |doc| break :blk RawBson.javaScriptWithScope(code, doc),
                             else => unreachable,
                         }
                     },
-                    .symbol => RawBson.symbol(try self.readStr()),
+                    .symbol => RawBson.symbol(try self.readStr(owned.arena.allocator())),
                     .int32 => RawBson.int32(try self.readI32()),
                     .timestamp => RawBson.timestamp(try self.readU32(), try self.readU32()),
                     .int64 => RawBson.int64(try self.readI64()),
@@ -137,7 +146,8 @@ pub fn Reader(comptime T: type) type {
             }
             std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
 
-            return RawBson.document(try elements.toOwnedSlice());
+            owned.value = RawBson.document(try elements.toOwnedSlice());
+            return owned;
         }
 
         inline fn readI32(self: *@This()) !i32 {
@@ -152,17 +162,17 @@ pub fn Reader(comptime T: type) type {
             return self.reader.reader().readInt(u8, .little);
         }
 
-        inline fn readCStr(self: *@This()) ![]u8 {
+        inline fn readCStr(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
             return (try self.reader.reader().readUntilDelimiterAlloc(
-                self.arena.allocator(),
+                allocator,
                 0,
                 std.math.maxInt(usize),
             ));
         }
 
-        inline fn readStr(self: *@This()) ![]u8 {
+        inline fn readStr(self: *@This(), allocator: std.mem.Allocator) ![]u8 {
             const strLen = try self.readI32();
-            const bytes = try self.arena.allocator().alloc(u8, @intCast(strLen - 1));
+            const bytes = try allocator.alloc(u8, @intCast(strLen - 1));
             _ = try self.reader.reader().readAll(
                 bytes,
             );
