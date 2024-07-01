@@ -15,7 +15,7 @@ pub fn Writer(comptime T: type) type {
             };
         }
 
-        /// callers sure ensure this is called to free an allocated memory
+        /// callers should ensure this is called to free an allocated memory
         pub fn deinit(self: *@This()) void {
             self.arena.deinit();
         }
