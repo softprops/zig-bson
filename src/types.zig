@@ -577,7 +577,7 @@ pub const RawBson = union(enum) {
                 }
             },
             .Array => |v| blk: {
-                // if array of u8, assume a str
+                // if array of u8, assume a string
                 if (v.child == u8) {
                     break :blk RawBson.string(&data);
                 }
