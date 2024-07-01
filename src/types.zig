@@ -554,14 +554,14 @@ pub const RawBson = union(enum) {
             .Int => |v| blk: {
                 if (v.signedness == .unsigned) {
                     std.debug.print("unsigned integers not yet supported\n", .{});
-                    break :blk error.UnsupportedType;
+                    return error.UnsupportedType;
                 }
                 switch (v.bits) {
                     0...32 => break :blk RawBson.int32(@intCast(data)),
                     33...64 => break :blk RawBson.int64(@intCast(data)),
                     else => |otherwise| {
                         std.debug.print("{d} width ints not yet supported\n", .{otherwise});
-                        break :blk error.UnsupportedType;
+                        return error.UnsupportedType;
                     },
                 }
             },
@@ -572,11 +572,15 @@ pub const RawBson = union(enum) {
                     64 => break :blk RawBson.double(data),
                     else => |otherwise| {
                         std.debug.print("{d} width floats not yet supported\n", .{otherwise});
-                        break :blk error.UnsupportedType;
+                        return error.UnsupportedType;
                     },
                 }
             },
             .Array => |v| blk: {
+                // if array of u8, assume a str
+                if (v.child == u8) {
+                    break :blk RawBson.string(&data);
+                }
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
                     elements[i] = (try from(owned.arena.allocator(), elem)).value;
@@ -585,6 +589,7 @@ pub const RawBson = union(enum) {
             },
             .Pointer => |v| blk: {
                 switch (v.size) {
+                    //*[]u8 { ... }
                     .Slice => {
                         if (v.child == u8) {
                             break :blk RawBson.string(data);
@@ -598,7 +603,7 @@ pub const RawBson = union(enum) {
                     .One => break :blk (try from(owned.arena.allocator(), data.*)).value,
                     else => |otherwise| {
                         std.debug.print("{any} pointer types not yet supported\n", .{otherwise});
-                        break :blk error.UnsupportedType;
+                        return error.UnsupportedType;
                     },
                 }
             },
@@ -926,6 +931,7 @@ test "RawBson.from" {
     const opt: ?[]const u8 = null;
     var doc = try RawBson.from(allocator, .{
         .person = .{
+            .str = "test",
             .id = try ObjectId.fromHex("507f1f77bcf86cd799439011"),
             .opt = opt,
             .comp_int = 1,
