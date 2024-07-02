@@ -908,7 +908,7 @@ test "RawBson.into" {
         .{ "f64", RawBson.double(1.5) },
         .{ "bool", RawBson.boolean(true) },
     });
-    var into = try doc.into(allocator, struct {
+    const T = struct {
         id: ObjectId,
         str: []const u8,
         enu: Enum,
@@ -917,9 +917,20 @@ test "RawBson.into" {
         f64: f64,
         bool: bool,
         opt: ?bool,
-    });
+    };
+    var into = try doc.into(allocator, T);
     defer into.deinit();
-    std.debug.print("into {any}\n", .{into.value});
+    try std.testing.expectEqualDeep(T{
+        .id = try ObjectId.fromHex("507f1f77bcf86cd799439011"),
+        .str = "bar",
+        .enu = .boom,
+        .i32 = 1,
+        .i64 = 2,
+        .f64 = 1.5,
+        .bool = true,
+        .opt = null,
+    }, into.value);
+    //std.debug.print("into {any}\n", .{into.value});
 }
 test "RawBson.from" {
     const allocator = std.testing.allocator;

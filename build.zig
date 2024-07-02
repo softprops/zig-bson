@@ -11,6 +11,17 @@ pub fn build(b: *std.Build) !void {
 
     try b.modules.put(b.dupe("bson"), bson);
 
+    // used only for checking compilation
+    // see https://kristoff.it/blog/improving-your-zls-experience/
+    // var compile = b.addStaticLibrary(.{
+    //     .name = "bson",
+    //     .root_source_file = b.path("src/root.zig"),
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+    // const check = b.step("check", "Check if foo compiles");
+    // check.dependOn(&compile.step);
+
     // unit tests
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
