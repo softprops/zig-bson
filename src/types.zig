@@ -579,7 +579,7 @@ pub const RawBson = union(enum) {
             .Array => |v| blk: {
                 // if array of u8, assume a string
                 if (v.child == u8) {
-                    break :blk RawBson.string(&data);
+                    break :blk RawBson.string(try owned.arena.allocator().dupe(u8, &data));
                 }
                 var elements = try owned.arena.allocator().alloc(RawBson, v.len);
                 for (data, 0..) |elem, i| {
@@ -592,7 +592,7 @@ pub const RawBson = union(enum) {
                     //*[]u8 { ... }
                     .Slice => {
                         if (v.child == u8) {
-                            break :blk RawBson.string(data);
+                            break :blk RawBson.string(try owned.arena.allocator().dupe(u8, data));
                         }
                         var elements = try std.ArrayList(RawBson).init(owned.arena.allocator());
                         for (data) |elem| {
@@ -948,7 +948,25 @@ test "RawBson.from" {
         },
     });
     defer doc.deinit();
-    std.debug.print("doc {s}", .{doc.value});
+    // std.debug.print("doc {s}\n", .{doc.value});
+    try std.testing.expectEqualDeep(doc.value, RawBson.document(&.{.{
+        "person", RawBson.document(&.{
+            .{ "str", RawBson.string("test") },
+            .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
+            .{ "opt", RawBson.null() },
+            .{ "comp_int", RawBson.int32(1) },
+            .{ "i16", RawBson.int32(2) },
+            .{ "i32", RawBson.int32(2) },
+            .{ "i64", RawBson.int64(3) },
+            .{ "ary", RawBson.array(&[_]RawBson{ RawBson.int32(4), RawBson.int32(5), RawBson.int32(6) }) },
+            .{ "slice", RawBson.array(&[_]RawBson{ RawBson.int32(1), RawBson.int32(2), RawBson.int32(3) }) },
+            .{ "bool", RawBson.boolean(true) },
+            .{ "comp_float", RawBson.double(3.2) },
+            .{ "float32", RawBson.double(@floatCast(@as(f32, 3.2))) },
+            .{ "float64", RawBson.double(3.2) },
+            .{ "enu", RawBson.string("a") },
+        }),
+    }}));
 }
 
 test "RawBson.jsonStringify" {
