@@ -20,6 +20,11 @@ pub fn Writer(comptime T: type) type {
             self.arena.deinit();
         }
 
+        pub fn writeFrom(self: *@This(), data: anytype) !void {
+            const raw = try RawBson.from(self.arena.allocator(), data);
+            try write(raw.value);
+        }
+
         pub fn write(self: *@This(), bson: RawBson) !void {
             switch (bson) {
                 .double => |v| {
