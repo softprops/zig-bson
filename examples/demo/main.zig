@@ -14,6 +14,8 @@ pub fn main() !void {
             .{ "hello", RawBson.string("world") },
         },
     );
+
+    // write a document to a byte buffer
     const bytes = try serialize(allocator, doc);
     defer allocator.free(bytes);
     std.debug.print("{s}", .{std.fmt.fmtSliceHexLower(bytes)});
@@ -38,7 +40,6 @@ fn deserialize(allocator: std.mem.Allocator, bytes: []const u8) !bson.Owned(RawB
 }
 
 fn serialize(allocator: std.mem.Allocator, doc: RawBson) ![]const u8 {
-    // write a document to a byte buffer
     var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
     var writer = bson.writer(

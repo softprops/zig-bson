@@ -800,7 +800,18 @@ pub const RawBson = union(enum) {
                                 else => return error.IncompatibleBsonType,
                             }
                         }
-                        return error.UnsupportedType;
+                        switch (self) {
+                            .array => |a| {
+                                // alloc an array to capture data
+                                var elements = try std.ArrayList(v.child).initCapacity(owned.arena.allocator(), a.len);
+                                elements.deinit();
+                                for (a) |elem| {
+                                    elements.appendAssumeCapacity((try elem.into(owned.arena.allocator(), v.child)).value);
+                                }
+                                break :blk try elements.toOwnedSlice();
+                            },
+                            else => return error.IncompatibleBsonType,
+                        }
                     },
                     // .One => break :blk (try from(owned.arena.allocator(), data.*, options)).value,
                     else => |otherwise| {
@@ -899,15 +910,18 @@ test "RawBson.into" {
         boom,
         doom,
     };
-    var doc = RawBson.document(&.{
-        .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
-        .{ "str", RawBson.string("bar") },
-        .{ "enu", RawBson.string("boom") },
-        .{ "i32", RawBson.int32(1) },
-        .{ "i64", RawBson.int64(2) },
-        .{ "f64", RawBson.double(1.5) },
-        .{ "bool", RawBson.boolean(true) },
-    });
+    var doc = RawBson.document(
+        &.{
+            .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
+            .{ "str", RawBson.string("bar") },
+            .{ "enu", RawBson.string("boom") },
+            .{ "i32", RawBson.int32(1) },
+            .{ "i64", RawBson.int64(2) },
+            .{ "f64", RawBson.double(1.5) },
+            .{ "bool", RawBson.boolean(true) },
+            .{ "ary", RawBson.array(&.{ RawBson.int32(1), RawBson.int32(2), RawBson.int32(3) }) },
+        },
+    );
     const T = struct {
         id: ObjectId,
         str: []const u8,
@@ -917,6 +931,7 @@ test "RawBson.into" {
         f64: f64,
         bool: bool,
         opt: ?bool,
+        ary: []const i32,
     };
     var into = try doc.into(allocator, T);
     defer into.deinit();
@@ -929,6 +944,7 @@ test "RawBson.into" {
         .f64 = 1.5,
         .bool = true,
         .opt = null,
+        .ary = &.{ 1, 2, 3 },
     }, into.value);
     //std.debug.print("into {any}\n", .{into.value});
 }
