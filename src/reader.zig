@@ -24,6 +24,14 @@ pub fn Reader(comptime T: type) type {
             return init(allocator, self.reader.child_reader);
         }
 
+        pub fn readInto(self: *@This(), comptime Into: type) !Owned(Into) {
+            const raw = try self.read();
+            var into = try raw.value.into(raw.arena.allocator(), Into);
+            // pass along enclosing arena for releasing resources
+            into.arena = raw.arena;
+            return into;
+        }
+
         /// reads a data into a Owned RawBson type. callers are responsible for freeing memory by calling .deinit()
         pub fn read(self: *@This()) !Owned(RawBson) {
             var owned = Owned(RawBson){

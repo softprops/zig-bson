@@ -21,22 +21,18 @@ pub fn main() !void {
     std.debug.print("{s}", .{std.fmt.fmtSliceHexLower(bytes)});
 
     // read it back
-    var rawBson = try deserialize(allocator, bytes);
-    defer rawBson.deinit();
-    switch (rawBson.value) {
-        .document => |v| {
-            if (v.get("hello")) |value| {
-                std.debug.print("deserialized hello '{s}'!", .{value});
-            }
-        },
-        else => unreachable,
-    }
+    const Example = struct {
+        hello: []const u8,
+    };
+    var read = try deserialize(allocator, bytes, Example);
+    defer read.deinit();
+    std.debug.print("deserialized hello '{s}'!", .{read.value.hello});
 }
 
-fn deserialize(allocator: std.mem.Allocator, bytes: []const u8) !bson.Owned(RawBson) {
+fn deserialize(allocator: std.mem.Allocator, bytes: []const u8, comptime Into: type) !bson.Owned(Into) {
     var fbs = std.io.fixedBufferStream(bytes);
     var reader = bson.reader(allocator, fbs.reader());
-    return try reader.read();
+    return try reader.readInto(Into);
 }
 
 fn serialize(allocator: std.mem.Allocator, doc: RawBson) ![]const u8 {
