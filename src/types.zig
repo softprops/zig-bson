@@ -701,7 +701,11 @@ pub const RawBson = union(enum) {
                         var parsed: T = undefined;
                         inline for (v.fields) |field| {
                             if (doc.get(field.name)) |value| {
-                                @field(parsed, field.name) = (try value.into(owned.arena.allocator(), field.type)).value;
+                                const ftype = switch (@typeInfo(field.type)) {
+                                    .Optional => |o| o.child,
+                                    else => field.type,
+                                };
+                                @field(parsed, field.name) = (try value.into(owned.arena.allocator(), ftype)).value;
                             } else if (field.default_value) |default| {
                                 const dvalue_aligned: *align(field.alignment) const anyopaque = @alignCast(default);
                                 @field(parsed, field.name) = @as(*const field.type, @ptrCast(dvalue_aligned)).*;
@@ -919,6 +923,7 @@ test "RawBson.into" {
             .{ "i64", RawBson.int64(2) },
             .{ "f64", RawBson.double(1.5) },
             .{ "bool", RawBson.boolean(true) },
+            .{ "opt_present", RawBson.boolean(true) },
             .{ "ary", RawBson.array(&.{ RawBson.int32(1), RawBson.int32(2), RawBson.int32(3) }) },
         },
     );
@@ -931,6 +936,7 @@ test "RawBson.into" {
         f64: f64,
         bool: bool,
         opt: ?bool,
+        opt_present: ?bool,
         ary: []const i32,
     };
     var into = try doc.into(allocator, T);
@@ -944,6 +950,7 @@ test "RawBson.into" {
         .f64 = 1.5,
         .bool = true,
         .opt = null,
+        .opt_present = true,
         .ary = &.{ 1, 2, 3 },
     }, into.value);
     //std.debug.print("into {any}\n", .{into.value});
@@ -956,11 +963,13 @@ test "RawBson.from" {
         c,
     };
     const opt: ?[]const u8 = null;
+    const opt_present: ?[]const u8 = "opt_present";
     var doc = try RawBson.from(allocator, .{
         .person = .{
             .str = "test",
             .id = try ObjectId.fromHex("507f1f77bcf86cd799439011"),
             .opt = opt,
+            .opt_present = opt_present,
             .comp_int = 1,
             .i16 = @as(i16, 2),
             .i32 = @as(i32, 2),
@@ -981,6 +990,7 @@ test "RawBson.from" {
             .{ "str", RawBson.string("test") },
             .{ "id", try RawBson.objectIdHex("507f1f77bcf86cd799439011") },
             .{ "opt", RawBson.null() },
+            .{ "opt_present", RawBson.string("opt_present") },
             .{ "comp_int", RawBson.int32(1) },
             .{ "i16", RawBson.int32(2) },
             .{ "i32", RawBson.int32(2) },

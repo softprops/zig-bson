@@ -1,3 +1,7 @@
+# 0.1.3
+
+* correct `RawBson.into` issue with optional typed fields when present
+
 # 0.1.2
 
 * add `RawBson.{into,from}` to support converting RawBson to and from custom types
