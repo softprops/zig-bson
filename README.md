@@ -26,7 +26,7 @@ Create a `build.zig.zon` file to declare a dependency
 Starting in zig 0.12.0, you can use and should prefer
 
 ```sh
-zig fetch --save https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.3.tar.gz
+zig fetch --save https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.4.tar.gz
 ```
 
 otherwise, to manually add it, do so as follows
@@ -39,7 +39,7 @@ otherwise, to manually add it, do so as follows
 +       // 👇 declare dep properties
 +        .bson = .{
 +            // 👇 uri to download
-+            .url = "https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.3.tar.gz",
++            .url = "https://github.com/softprops/zig-bson/archive/refs/tags/v0.1.4.tar.gz",
 +            // 👇 hash verification
 +            .hash = "...",
 +        },
