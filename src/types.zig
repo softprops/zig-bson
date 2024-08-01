@@ -750,7 +750,7 @@ pub const RawBson = union(enum) {
             },
             Document => switch (self) {
                 .document => |v| {
-                    owned.value = try v.dupe(owned.arena.allocator());
+                    owned.value = try v.dupe();
                     return owned;
                 },
                 else => return error.IncompatibleBsonType,
