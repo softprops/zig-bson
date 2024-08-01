@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    needs: [fmt, test, examples]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
