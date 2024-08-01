@@ -792,7 +792,7 @@ pub const RawBson = union(enum) {
             },
             Datetime => switch (self) {
                 .datetime => |v| {
-                    owned.value = try v.dupe(owned.arena.allocator());
+                    owned.value = try v.dupe();
                     return owned;
                 },
                 else => return error.IncompatibleBsonType,
