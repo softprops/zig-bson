@@ -1,6 +1,6 @@
 .{
     .name = "bson",
-    .version = "0.1.3",
+    .version = "0.1.4",
     .dependencies = .{
         // todo: update this to a versioned tag when this package publishes one
         .benchmark = .{

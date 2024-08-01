@@ -1,3 +1,7 @@
+# 0.1.4
+
+* Update `RawBson.into` to return a fully copy of the data to avoid issues with callers deinitializing the underlying data.
+
 # 0.1.3
 
 * correct `RawBson.into` issue with optional typed fields when present

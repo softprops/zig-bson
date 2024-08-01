@@ -5,11 +5,9 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const bson = b.createModule(.{
+    const bson = b.addModule("bson", .{
         .root_source_file = b.path("src/root.zig"),
     });
-
-    try b.modules.put(b.dupe("bson"), bson);
 
     // used only for checking compilation
     // see https://kristoff.it/blog/improving-your-zls-experience/
