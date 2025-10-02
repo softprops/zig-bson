@@ -9,11 +9,16 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const doc = RawBson.document(
+    const doc = try RawBson.createDocument(
         &.{
             .{ "hello", RawBson.string("world") },
         },
+        allocator
     );
+
+    // RawBson.createDocument allocates memory to store the name and Bson value
+    // so it needs to be freed
+    defer doc.deinit(allocator);
 
     // write a document to a byte buffer
     const bytes = try serialize(allocator, doc);

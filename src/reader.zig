@@ -54,8 +54,8 @@ pub fn Reader(comptime T: type) type {
                 const tpe = types.Type.fromInt(try self.readI8());
                 const name = try self.readCStr(owned.arena.allocator());
                 const element = switch (tpe) {
-                    .double => RawBson.double(try self.readF64()),
-                    .string => RawBson.string(try self.readStr(owned.arena.allocator())),
+                    .double => RawBson.makeDouble(try self.readF64()),
+                    .string => RawBson.makeString(try self.readStr(owned.arena.allocator())),
                     .document => blk: {
                         var child = self.fork(owned.arena.allocator());
                         const raw = (try child.read()).value;
@@ -74,9 +74,9 @@ pub fn Reader(comptime T: type) type {
                                 // an array is just a document whose keys are array indexes. i.e { "0": "...", "1": "..." }
                                 var elems = try owned.arena.allocator().alloc(RawBson, doc.elements.len);
                                 for (doc.elements, 0..) |elem, i| {
-                                    elems[i] = elem.@"1";
+                                    elems[i] = elem.@"1".*;
                                 }
-                                break :blk RawBson.array(elems);
+                                break :blk RawBson.makeArray(elems);
                             },
                             else => unreachable,
                         }
@@ -95,21 +95,21 @@ pub fn Reader(comptime T: type) type {
                                 const innerLen = try innerReader.readInt(i32, .little);
                                 const innerBytes = try owned.arena.allocator().alloc(u8, @intCast(innerLen)); //try innerBuf.toOwnedSlice();
                                 _ = try innerReader.readAll(innerBytes);
-                                break :old RawBson.binary(innerBytes, st);
+                                break :old RawBson.makeBinary(innerBytes, st);
                             },
                             else => RawBson{ .binary = types.Binary.init(bytes, st) },
                         };
                     },
-                    .undefined => RawBson.undefined(),
+                    .undefined => RawBson.makeUndefined(),
                     .object_id => blk: {
                         var bytes: [12]u8 = undefined;
                         _ = try self.reader.reader().readAll(&bytes);
-                        break :blk RawBson.objectId(bytes);
+                        break :blk RawBson.makeObjectId(bytes);
                     },
-                    .boolean => RawBson.boolean(try self.readI8() == 1),
-                    .datetime => RawBson.datetime(try self.readI64()),
-                    .null => RawBson.null(),
-                    .regex => RawBson.regex(try self.readCStr(owned.arena.allocator()), try self.readCStr(owned.arena.allocator())),
+                    .boolean => RawBson.makeBoolean(try self.readI8() == 1),
+                    .datetime => RawBson.makeDatetime(try self.readI64()),
+                    .null => RawBson.makeNull(),
+                    .regex => RawBson.makeRegex(try self.readCStr(owned.arena.allocator()), try self.readCStr(owned.arena.allocator())),
                     .dbpointer => blk: {
                         const ref = try self.readStr(owned.arena.allocator());
 
@@ -120,7 +120,7 @@ pub fn Reader(comptime T: type) type {
                             .dbpointer = types.DBPointer.init(ref, types.ObjectId.fromBytes(id_bytes)),
                         };
                     },
-                    .javascript => RawBson.javaScript(try self.readStr(owned.arena.allocator())),
+                    .javascript => RawBson.makeJavaScript(try self.readStr(owned.arena.allocator())),
                     .javascript_with_scope => blk: {
                         _ = try self.readI32();
                         const code = try self.readStr(owned.arena.allocator());
@@ -128,23 +128,25 @@ pub fn Reader(comptime T: type) type {
                         const raw = (try child.read()).value;
                         self.reader.bytes_read += child.reader.bytes_read;
                         switch (raw) {
-                            .document => |doc| break :blk RawBson.javaScriptWithScope(code, doc),
+                            .document => |doc| break :blk RawBson.makeJavaScriptWithScope(code, doc),
                             else => unreachable,
                         }
                     },
-                    .symbol => RawBson.symbol(try self.readStr(owned.arena.allocator())),
-                    .int32 => RawBson.int32(try self.readI32()),
-                    .timestamp => RawBson.timestamp(try self.readU32(), try self.readU32()),
-                    .int64 => RawBson.int64(try self.readI64()),
+                    .symbol => RawBson.makeSymbol(try self.readStr(owned.arena.allocator())),
+                    .int32 => RawBson.makeInt32(try self.readI32()),
+                    .timestamp => RawBson.makeTimestamp(try self.readU32(), try self.readU32()),
+                    .int64 => RawBson.makeInt64(try self.readI64()),
                     .decimal128 => blk: {
                         var bytes: [16]u8 = undefined;
                         _ = try self.reader.reader().readAll(&bytes);
-                        break :blk RawBson.decimal128(bytes);
+                        break :blk RawBson.makeDecimal128(bytes);
                     },
-                    .min_key => RawBson.minKey(),
-                    .max_key => RawBson.maxKey(),
+                    .min_key => RawBson.makeMinKey(),
+                    .max_key => RawBson.makeMaxKey(),
                 };
-                try elements.append(.{ name, element });
+                const element_ptr = try owned.arena.allocator().create(RawBson);
+                element_ptr.* = element;
+                try elements.append(.{ name, element_ptr });
             }
 
             const lastByte = try self.reader.reader().readByte();
@@ -154,7 +156,7 @@ pub fn Reader(comptime T: type) type {
             }
             std.log.debug("len {d} read {d}", .{ len, self.reader.bytes_read });
 
-            owned.value = RawBson.document(try elements.toOwnedSlice());
+            owned.value = RawBson.makeDocument(try elements.toOwnedSlice());
             return owned;
         }
 

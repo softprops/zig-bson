@@ -43,7 +43,7 @@ pub fn Writer(comptime T: type) type {
                         try docWriter.writeInt(i8, elem.@"1".toType().toInt());
                         _ = try docWriter.writeAll(elem.@"0");
                         try docWriter.writeSentinelByte();
-                        try docWriter.write(elem.@"1");
+                        try docWriter.write(elem.@"1".*);
                     }
 
                     // we add 5 to account for 1. the 4 byte len itself and 2. 1 extra null byte at the end
@@ -145,24 +145,26 @@ test Writer {
     var bsonWriter = writer(allocator, buf.writer());
     defer bsonWriter.deinit();
 
-    const doc = RawBson.document(
+    const doc = try RawBson.createDocument(
         &.{
-            .{ "a", types.RawBson.string("a") },
-            .{ "b", types.RawBson.boolean(true) },
-            .{ "c", types.RawBson.minKey() },
-            .{ "d", types.RawBson.maxKey() },
-            .{ "e", types.RawBson.array(
+            .{ "a", types.RawBson.makeString("a") },
+            .{ "b", types.RawBson.makeBoolean(true) },
+            .{ "c", types.RawBson.makeMinKey() },
+            .{ "d", types.RawBson.makeMaxKey() },
+            .{ "e", types.RawBson.makeArray(
                 &[_]RawBson{
-                    RawBson.int32(10),
-                    RawBson.int32(11),
-                    RawBson.int32(12),
+                    RawBson.makeInt32(10),
+                    RawBson.makeInt32(11),
+                    RawBson.makeInt32(12),
                 },
             ) },
-            .{ "f", RawBson.datetime(0) },
-            .{ "g", RawBson.double(1.23) },
-            .{ "h", try RawBson.objectIdHex("56e1fc72e0c917e9c4714161") },
+            .{ "f", RawBson.makeDatetime(0) },
+            .{ "g", RawBson.makeDouble(1.23) },
+            .{ "h", try RawBson.makeObjectIdHex("56e1fc72e0c917e9c4714161") },
         },
+        allocator
     );
+    defer doc.deinit(allocator);
     try bsonWriter.write(doc);
     const written = try buf.toOwnedSlice();
     defer allocator.free(written);

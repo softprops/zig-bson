@@ -83,7 +83,7 @@ test "bson specs" {
         if (std.mem.startsWith(u8, entry.path, "decimal")) {
             continue;
         }
-        var pathBuf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var pathBuf: [std.fs.max_path_bytes]u8 = undefined;
         var file = try fs.openFileAbsolute(
             try fs.Dir.realpath(specs, entry.path, &pathBuf),
             .{},
@@ -114,7 +114,7 @@ test "bson specs" {
                 }
                 std.debug.print("{s}: {s}\n", .{ suite.description, valid.description });
                 // each of these are essentially a mini document with test_key as a key and some test suite specific bson typed value
-                var bsonBuf: [std.mem.page_size]u8 = undefined;
+                var bsonBuf: [4*1024]u8 = undefined; // Hard code a *sensible* buf size
                 const bson = try std.fmt.hexToBytes(&bsonBuf, valid.canonical_bson);
 
                 //std.debug.print("raw (bytes) {any}\n", .{bson});

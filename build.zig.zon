@@ -1,6 +1,6 @@
 .{
-    .name = "bson",
-    .version = "0.1.4",
+    .name = .bson,
+    .version = "0.1.5",
     .dependencies = .{
         // todo: update this to a versioned tag when this package publishes one
         .benchmark = .{
@@ -8,7 +8,8 @@
             .hash = "1220287c22cfcf85f05d353084e12200c6a7dcb5f4511cb05103f5dbd709e50731a7",
         },
     },
-    .minimum_zig_version = "0.13.0",
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0xaeb30daac4c1f602,
     .paths = .{
         "build.zig",
         "build.zig.zon",
